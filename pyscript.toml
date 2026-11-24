@@ -1,0 +1,11 @@
+name = "GIEE - Gestion de Integridad de Equipos Estaticos"
+packages = ["numpy", "matplotlib", "pandas"]
+
+[files]
+"py/calc/__init__.py" = "calc/__init__.py"
+"py/calc/materiales.py" = "calc/materiales.py"
+"py/calc/espesores.py" = "calc/espesores.py"
+"py/calc/corrosion.py" = "calc/corrosion.py"
+"py/calc/inspeccion.py" = "calc/inspeccion.py"
+"py/calc/rbi.py" = "calc/rbi.py"
+"py/ui.py" = "ui.py"

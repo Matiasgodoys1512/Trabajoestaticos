@@ -81,3 +81,12 @@ def test_rbi_saneado():
 def test_validar_campo_diseno(campo, valor, ok):
     x, msg = validar_campo_diseno(campo, valor)
     assert (msg is None) == ok
+
+
+def test_fecha_evaluacion_saneada():
+    d = copy.deepcopy(DEMO)
+    assert validar_proyecto(d)["fecha_evaluacion"] == "2026-11-26"
+    d["fecha_evaluacion"] = "<script>"
+    assert validar_proyecto(d)["fecha_evaluacion"] == ""
+    del d["fecha_evaluacion"]
+    assert validar_proyecto(d)["fecha_evaluacion"] == ""

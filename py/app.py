@@ -23,8 +23,11 @@ CLAVE = "giee_proyecto_v1"
 LIMITES = {"importar": 25_000_000, "subir_img": 1_500_000, "subir_pdf": 3_000_000}
 FIRMAS = {"image/png": b"\x89PNG", "image/jpeg": b"\xff\xd8\xff", "application/pdf": b"%PDF"}
 FORM_ACCION = {"form_med": "add_med", "form_cml": "add_cml", "form_xy": "mover_cml", "form_eq": "guardar_eq"}
-E = {"data": None, "eq": None, "cml": None, "tab": "inicio", "sub": "resumen", "filtros": {}, "editando": None}
-VISTAS = ("inicio", "planta", "equipos", "rbi", "validacion", "acerca")
+E = {"data": None, "eq": None, "cml": None, "tab": "inicio", "sub": "resumen", "filtros": {}, "editando": None,
+     "rbi_eq": None, "cambio": "", "cambio_ruta": None, "demo": None}
+VISTAS = ("inicio", "planta", "equipos", "plan", "rbi", "validacion", "acerca")
+ETIQUETA_RBI = {"cml": "CML gobernante", "confianza": "Confianza en la CR", "pscore": "Puntaje de gestión [%]", "C_A_m2": "C_A [m²]",
+                "C_E": "C_E", "f_om": "F_OM", "moneda": "Moneda", "base_valoracion": "Base de valoración"}
 _ruta = {"actual": None}
 _proxies = []  # referencias vivas a los proxies de eventos
 
@@ -89,17 +92,29 @@ def guardar_local(aviso=False):
         return False
 
 
-async def cargar_demo():
+async def leer_demo():
     r = await pyfetch("data/demo.json", cache="no-store")
-    E["data"] = proyecto.validar_proyecto(json.loads(await r.string()))
+    E["demo"] = proyecto.validar_proyecto(json.loads(await r.string()))
+    return copy.deepcopy(E["demo"])
+
+
+async def cargar_demo():
+    E["data"] = await leer_demo()
     E["eq"] = E["data"]["equipos"][0]["id"]
     E["cml"] = None
+
+
+def base_demo(eq_id):
+    """Equipo homónimo del caso demo (valores originales), o None si el equipo no viene del demo."""
+    return next((e for e in (E["demo"] or {}).get("equipos", []) if e["id"] == eq_id), None)
 
 
 # ------------------------------------------------------------------ rutas (URL ↔ estado)
 def ruta_desde_estado():
     """#/inicio · #/planta · #/equipos/<id>[/cml/<id>][/diseno] · #/rbi · #/validacion · #/acerca"""
     t = E["tab"]
+    if t == "rbi" and E["rbi_eq"]:
+        return "#/rbi/" + window.encodeURIComponent(E["rbi_eq"])
     if t != "equipos" or not E["eq"]:
         return f"#/{t}"
     h = "#/equipos/" + window.encodeURIComponent(E["eq"])
@@ -114,6 +129,9 @@ def estado_desde_ruta(h):
     partes = [window.decodeURIComponent(x) for x in str(h or "").lstrip("#").strip("/").split("/") if x]
     tab = partes[0] if partes and partes[0] in VISTAS else "inicio"
     E["tab"], E["editando"] = tab, None
+    if tab == "rbi":
+        ids = {e["id"] for e in E["data"]["equipos"]}
+        E["rbi_eq"] = partes[1] if len(partes) > 1 and partes[1] in ids else E["rbi_eq"]
     if tab == "equipos":
         ids = {e["id"] for e in E["data"]["equipos"]}
         if len(partes) > 1 and partes[1] in ids:
@@ -145,6 +163,9 @@ def render(empujar=True):
             E["cml"] = None
         eq = eq_actual()
         t = E["tab"]
+        if E["cambio_ruta"] != ruta_desde_estado():  # el aviso «último cambio» vive solo en la vista donde se hizo
+            E["cambio"], E["cambio_ruta"] = "", None
+        sincronizar_fecha()
         # Al abrir un equipo se muestra de inmediato su CML más crítico (menos clics, foco en lo importante)
         if t == "equipos" and eq and eq["cmls"] and not any(c["id"] == E["cml"] for c in eq["cmls"]):
             E["cml"] = ui.cml_gobernante(eq, res[eq["id"]])[0]["id"] if not res[eq["id"]]["error"] else eq["cmls"][0]["id"]
@@ -166,9 +187,14 @@ def render(empujar=True):
         elif t == "planta":
             html = ui.panel(data, res, E["filtros"])
         elif t == "equipos":
-            html = ui.pagina_equipo(data, res, eq, E["cml"], E["sub"]) if eq else sin
+            b = base_demo(eq["id"]) if eq else None
+            html = ui.pagina_equipo(data, res, eq, E["cml"], E["sub"], base=(b or {}).get("diseno"), cambio=E["cambio"]) if eq else sin
+        elif t == "plan":
+            html = ui.vista_plan(data, res)
         elif t == "rbi":
-            html = ui.vista_rbi(data, res)
+            er = eq_rbi()
+            b = base_demo(er["id"]) if er else None
+            html = ui.vista_rbi(data, res, er["id"] if er else None, base=(b or {}).get("rbi"), cambio=E["cambio"])
         elif t == "validacion":
             html = ui.vista_validacion()
         else:
@@ -194,6 +220,124 @@ def render(empujar=True):
 def cambio():
     guardar_local()
     render()
+
+
+def sincronizar_fecha():
+    """Muestra en la barra superior la fecha de evaluación vigente del proyecto."""
+    inp = document.getElementById("fecha-eval")
+    if hay(inp):
+        f = E["data"].get("fecha_evaluacion") or ""
+        inp.value = f or date.today().isoformat()
+        inp.max = "2100-12-31"
+        caja = document.getElementById("caja-fecha")
+        caja.classList.toggle("fija", bool(f) and f != date.today().isoformat())
+        caja.title = ("Fecha de evaluación fija del proyecto: los cálculos se hacen «al día» de esta fecha. Bórrala para usar la de hoy."
+                      if f else "Se evalúa a la fecha de hoy. Elige otra fecha para ver el estado de la planta en ese día.")
+
+
+def anotar_cambio(txt):
+    E["cambio"], E["cambio_ruta"] = txt, ruta_desde_estado()
+
+
+# ------------------------------------------------------------------ antes → después (U2)
+def foto_equipo(eq):
+    """Estado del equipo para comparar antes y después de un cambio de diseño."""
+    r = ui.evaluar_todo(E["data"])[eq["id"]]
+    if r["error"] or not eq["cmls"]:
+        return {"error": r["error"]}
+    c, _ = ui.cml_gobernante(eq, r)
+    x = r["cmls"][c["id"]]
+    return {"cml": c["id"], "t_min": x["t_min"], "cond": x["condicion"], "rl": x["rl"], "proxima": ui.prox_txt(x), "eq_cond": r["cond"]}
+
+
+def foto_rbi(eq):
+    r = ui.evaluar_todo(E["data"])[eq["id"]]
+    if r["error"] or not eq.get("rbi") or not eq["cmls"]:
+        return {}
+    R = ui.calcular_rbi(eq, r)
+    return {"Df": R["con"]["Df"], "R_A": R["r"]["R_A"], "R_E": R["r"]["R_E"], "nivel": R["r"]["nivel"], "moneda": R["r"]["moneda"]}
+
+
+def flecha(a, b, fmt):
+    return f"{fmt(a)} → <b>{fmt(b)}</b>" if a != b else f"{fmt(b)} (sin cambio)"
+
+
+def texto_diseno(campo, va, vb, a, b):
+    nombre = proyecto.RANGOS.get(campo, (0, 0, 0, campo))[3]
+    partes = [f"{ui.esc(nombre)}: {flecha(va, vb, lambda v: ui.f(v, 3))}"]
+    if "t_min" in a and "t_min" in b:
+        partes.append(f"t mín ({ui.esc(b['cml'])}): {flecha(a['t_min'], b['t_min'], lambda v: ui.f(v, 2, 'mm'))}")
+        if a["cml"] != b["cml"]:
+            partes.append(f"CML gobernante: {ui.esc(a['cml'])} → <b>{ui.esc(b['cml'])}</b>")
+        if a["cond"] != b["cond"] or a["cml"] != b["cml"]:
+            partes.append(f"condición: {ui.CONDICION[a['cond']]} → <b>{ui.CONDICION[b['cond']]}</b>")
+        if a["proxima"] != b["proxima"]:
+            partes.append(f"próxima inspección: {a['proxima']} → <b>{b['proxima']}</b>")
+    return " · ".join(partes)
+
+
+def texto_rbi(campo, va, vb, a, b):
+    nombre = ETIQUETA_RBI.get(campo) or (f"Inspecciones {campo[5:]}" if campo.startswith("insp_") else campo)
+    unidad = {"C_E": (b or {}).get("moneda", ""), "C_A_m2": ""}.get(campo, "")
+    if campo == "C_E":
+        fmt_v = lambda v: ui.f(v, 0, unidad)  # noqa: E731
+    else:
+        fmt_v = lambda v: ui.f(v, 2) if isinstance(v, float) else ui.esc(v)  # noqa: E731
+    partes = [f"{ui.esc(nombre)}: {flecha(va, vb, fmt_v)}"]
+    if a and b:
+        if abs(a["Df"] - b["Df"]) > 1e-9:
+            partes.append(f"D_f: {flecha(round(a['Df'], 1), round(b['Df'], 1), lambda v: ui.f(v, 1))}")
+        partes.append(f"R_A: {flecha(a['R_A'], b['R_A'], lambda v: ui.f(v, 4, 'm²/año'))}")
+        partes.append(f"R_E: {flecha(round(a['R_E']), round(b['R_E']), lambda v: ui.f(float(v), 0, b['moneda'] + '/año'))}")
+        partes.append(f"prioridad: {flecha(a['nivel'], b['nivel'], str)}")
+    return " · ".join(partes)
+
+
+def set_diseno(eq, campo, valor):
+    """Aplica un valor de diseño validado. Devuelve mensaje de error o None."""
+    v, msg = proyecto.validar_campo_diseno(campo, valor)
+    if msg:
+        return msg
+    a, va = foto_equipo(eq), eq["diseno"].get(campo)
+    eq["diseno"][campo] = v
+    if eq["familia"] == "tanque" and campo == "H_m":
+        for c in eq["cmls"]:
+            if c.get("diseno_local", {}).get("virola") == 1:
+                c["diseno_local"]["H_m"] = v
+    anotar_cambio(texto_diseno(campo, va, v, a, foto_equipo(eq)))
+    return None
+
+
+def set_rbi(eq, campo, valor):
+    """Aplica una entrada del RBI validada. Devuelve mensaje de error o None."""
+    cfg = eq["rbi"]
+    a = foto_rbi(eq)
+    if campo.startswith("insp_"):
+        n = proyecto.numero(valor)
+        if n is None or n < 0 or n > 20 or n != int(n):
+            return "N° de inspecciones: entero entre 0 y 20."
+        va, v = cfg["inspecciones"].get(campo[5:], 0), int(n)
+        cfg["inspecciones"][campo[5:]] = v
+    elif campo in ("pscore", "f_om", "C_A_m2", "C_E"):
+        v = proyecto.numero(valor)
+        lim = {"pscore": (0, 100), "f_om": (0.1, 10), "C_A_m2": (0, 1e7), "C_E": (0, 1e12)}[campo]
+        if v is None or not lim[0] <= v <= lim[1]:
+            return f"Valor fuera de rango ({lim[0]:g} – {lim[1]:g})."
+        va = cfg.get(campo)
+        cfg[campo] = v
+    elif campo in ("cml", "confianza", "moneda", "base_valoracion"):
+        v = proyecto.texto(valor, 200)
+        if campo == "cml" and v not in {c["id"] for c in eq["cmls"]}:
+            return "CML no válido."
+        if campo == "confianza" and v not in ui.rbi.PRIOR:
+            return "Confianza no válida."
+        va = cfg.get(campo)
+        cfg[campo] = v
+    else:
+        return "Campo desconocido."
+    if campo != "base_valoracion":
+        anotar_cambio(texto_rbi(campo, va, v, a, foto_rbi(eq)))
+    return None
 
 
 # ------------------------------------------------------------------ acciones de clic
@@ -231,6 +375,16 @@ def accion_click(el):
         E["cml"] = attr(el, "id")
         render()
         return
+    if act == "sel_rbi_eq":
+        E["rbi_eq"], E["tab"] = attr(el, "id"), "rbi"
+        render()
+        return
+    if act == "imprimir":
+        imprimir()
+        return
+    if act == "exportar_plan":
+        exportar_plan()
+        return
     if act == "guardar":
         guardar_local(True)
         return
@@ -242,7 +396,8 @@ def accion_click(el):
         if not filas:
             toast("No hay filas para exportar con los filtros actuales.")
             return
-        df = pd.DataFrame(filas).drop(columns=["_eq", "_cml"])
+        df = pd.DataFrame(filas)
+        df = df.drop(columns=[c for c in df.columns if c.startswith("_")])
         descargar("﻿" + df.to_csv(index=False, sep=";", decimal=","), f"resumen_cml_{date.today()}.csv", "text/csv")
         toast(f"CSV exportado ({len(df)} filas).")
         return
@@ -307,9 +462,64 @@ def accion_click(el):
         toast("Equipo eliminado.")
     elif act == "del_adj":
         eq["adjuntos"].pop(int(attr(el, "i")))
+    elif act == "revertir":
+        if not revertir(attr(el, "tipo"), attr(el, "campo")):
+            return
+    elif act == "crear_rbi":
+        er = eq_rbi()
+        if not er or er.get("rbi") or not er["cmls"]:
+            toast("Este equipo necesita al menos un CML para evaluar el riesgo.", error=True)
+            return
+        r = ui.evaluar_todo(E["data"])[er["id"]]
+        cfg = copy.deepcopy(ui.RBI_BASE)
+        cfg["cml"] = ui.cml_gobernante(er, r)[0]["id"] if not r["error"] else er["cmls"][0]["id"]
+        er["rbi"] = cfg
+        toast(f"Evaluación RBI creada para {er['tag']} con valores por defecto: ajústalos al escenario real.", 6000)
     else:
         return
     cambio()
+
+
+def revertir(tipo, campo):
+    """Vuelve un campo al valor del caso demo (U3)."""
+    if tipo == "diseno":
+        eq = eq_actual()
+        b = (base_demo(eq["id"]) or {}).get("diseno", {})
+        if campo not in b:
+            return False
+        msg = set_diseno(eq, campo, b[campo])
+    else:
+        eq = eq_rbi()
+        b = (base_demo(eq["id"]) or {}).get("rbi") or {}
+        val = (b.get("inspecciones") or {}).get(campo[5:]) if campo.startswith("insp_") else b.get(campo)
+        if val is None:
+            return False
+        msg = set_rbi(eq, campo, val)
+    if msg:
+        toast(msg, error=True)
+        return False
+    return True
+
+
+def imprimir():
+    """Abre todos los plegables del contenido y lanza el diálogo de impresión (guardar como PDF)."""
+    for d in document.querySelectorAll("#contenido details"):
+        d.setAttribute("open", "")
+    window.print()
+
+
+def exportar_plan():
+    plan = ui.filas_plan(E["data"], ui.evaluar_todo(E["data"]))
+    if not plan:
+        toast("No hay CML en el plan.")
+        return
+    filas = [{"Grupo": g[1], "Fecha": fl["Próxima inspección"], "Equipo": fl["Equipo"], "CML": fl["CML"],
+              "Componente": fl.get("Componente", ""), "Tarea": "Medición de espesores (UT)", "Intervalo [años]": fl["Intervalo [años]"],
+              "Criterio": fl["Criterio"], "Referencia": fl["Referencia"], "Condición": ui.CONDICION.get(fl["Condición"], fl["Condición"])}
+             for g, fl in plan]
+    df = pd.DataFrame(filas)
+    descargar("\ufeff" + df.to_csv(index=False, sep=";", decimal=","), f"plan_inspeccion_{ui.hoy_eval()}.csv", "text/csv")
+    toast(f"Plan exportado ({len(df)} CML).")
 
 
 def agregar_medicion(eq):
@@ -431,41 +641,37 @@ def accion_change(el):
         mat.innerHTML = ui.opciones_material(el.value)
         return
     if act == "diseno":
-        v, msg = proyecto.validar_campo_diseno(campo, el.value)
+        msg = set_diseno(eq, campo, el.value)
         if msg:
             toast(msg, error=True)
             render()
             return
-        antes = eq["diseno"].get(campo)
-        eq["diseno"][campo] = v
-        if eq["familia"] == "tanque" and campo == "H_m":
-            for c in eq["cmls"]:
-                if c.get("diseno_local", {}).get("virola") == 1:
-                    c["diseno_local"]["H_m"] = v
-        toast(f"{proyecto.RANGOS.get(campo, (0, 0, 0, campo))[3]}: {ui.f(antes, 3)} → {ui.f(v, 3)}. Recalculado.")
     elif act == "rbi":
-        cfg = eq_rbi()["rbi"]
-        if campo.startswith("insp_"):
-            n = proyecto.numero(el.value)
-            if n is None or n < 0 or n > 20 or n != int(n):
-                toast("N° de inspecciones: entero entre 0 y 20.", error=True)
-                render()
-                return
-            cfg["inspecciones"][campo[5:]] = int(n)
-        elif campo in ("pscore", "f_om", "C_A_m2", "C_E"):
-            v = proyecto.numero(el.value)
-            lim = {"pscore": (0, 100), "f_om": (0.1, 10), "C_A_m2": (0, 1e7), "C_E": (0, 1e12)}[campo]
-            if v is None or not lim[0] <= v <= lim[1]:
-                toast(f"Valor fuera de rango ({lim[0]:g} – {lim[1]:g}).", error=True)
-                render()
-                return
-            cfg[campo] = v
-        elif campo == "fecha_eval":
-            cfg[campo] = proyecto.fecha_valida(el.value) or ""
-        elif campo in ("cml", "confianza", "moneda", "base_valoracion"):
-            cfg[campo] = proyecto.texto(el.value, 200)
-        else:
+        er = eq_rbi()
+        if not er or not er.get("rbi"):
             return
+        msg = set_rbi(er, campo, el.value)
+        if msg:
+            toast(msg, error=True)
+            render()
+            return
+    elif act == "sel_rbi":
+        E["rbi_eq"] = el.value
+        render()
+        return
+    elif act == "fecha_eval":
+        f = proyecto.fecha_valida(el.value) or ""
+        if f == date.today().isoformat():
+            f = ""
+        E["data"]["fecha_evaluacion"] = f
+        if f:  # efecto de la fecha elegida respecto de evaluar hoy
+            hoy = {(fl["_eq"], fl["_cml"]): fl["Condición"] for fl in ui.filas_panel(E["data"], ui.evaluar_todo(E["data"], date.today()), {})}
+            otra = {(fl["_eq"], fl["_cml"]): fl["Condición"] for fl in ui.filas_panel(E["data"], ui.evaluar_todo(E["data"]), {})}
+            n = sum(1 for k, v in otra.items() if hoy.get(k) != v)
+            toast(f"Evaluación al {ui.fecha_cl(f)}: " + (f"{n} CML con condición distinta a la de hoy." if n
+                                                     else "misma condición que hoy en todos los CML."), 5000)
+        else:
+            toast(f"Evaluación a la fecha de hoy ({date.today():%d-%m-%Y}).")
     elif act in ("importar", "subir_img", "subir_pdf"):
         cerrar_menus()
         asyncio.ensure_future(cargar_archivo(el, act))
@@ -476,7 +682,10 @@ def accion_change(el):
 
 
 def eq_rbi():
-    return next(e for e in E["data"]["equipos"] if e.get("rbi"))
+    """Recipiente que se evalúa en Riesgo (RBI): el elegido; si no, el primero con evaluación; si no, el primer recipiente."""
+    recs = ui.recipientes(E["data"])
+    return (next((e for e in recs if e["id"] == E["rbi_eq"]), None) or next((e for e in recs if e.get("rbi")), None)
+            or (recs[0] if recs else None))
 
 
 # ------------------------------------------------------------------ archivos
@@ -491,7 +700,7 @@ async def cargar_archivo(el, act):
         datos = (await archivo.arrayBuffer()).to_py().tobytes()
         if act == "importar":
             data = proyecto.validar_proyecto(json.loads(datos.decode("utf-8-sig")))
-            E["data"], E["cml"], E["editando"], E["filtros"] = data, None, None, {}
+            E["data"], E["cml"], E["editando"], E["filtros"], E["rbi_eq"] = data, None, None, {}, None
             E["eq"] = data["equipos"][0]["id"] if data["equipos"] else None
             toast(f"Proyecto importado: {archivo.name} ({len(data['equipos'])} equipos).")
         else:
@@ -534,7 +743,7 @@ async def exportar():
 
 async def restablecer():
     await cargar_demo()
-    E["tab"], E["filtros"], E["editando"] = "inicio", {}, None
+    E["tab"], E["filtros"], E["editando"], E["rbi_eq"] = "inicio", {}, None, None
     cambio()
     toast("Caso demostrativo restablecido.")
 
@@ -604,6 +813,11 @@ async def iniciar():
             window.localStorage.removeItem(CLAVE)
     if not recuperado:
         await cargar_demo()
+    else:
+        try:
+            await leer_demo()
+        except Exception:  # noqa: BLE001 — sin demo de referencia solo se pierde la marca de campos editados
+            E["demo"] = None
     for tipo, fn in (("click", on_click), ("change", on_change), ("submit", on_submit), ("keydown", on_keydown)):
         registrar(tipo, fn)
     p = create_proxy(on_popstate)

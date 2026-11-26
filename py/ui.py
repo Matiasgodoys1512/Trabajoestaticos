@@ -50,8 +50,8 @@ def esc(x):
 def f(x, n=2, unidad=""):
     if x is None:
         return "—"
-    if isinstance(x, float) and (abs(x) >= 1e5 or (0 < abs(x) < 1e-3)):
-        s = f"{x:.2e}".replace(".", ",")
+    if isinstance(x, float) and 0 < abs(x) < 1e-3:
+        s = sci(x)
     else:
         s = f"{x:,.{n}f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return f"{s} {unidad}".strip()
@@ -146,10 +146,36 @@ def fecha_cl(iso):
     return f"{d}-{m}-{a}"
 
 
-def stat(label, valor, unidad="", sub="", clase=""):
+GLOSARIO = {
+    "t_actual": "Último espesor medido de la serie comparable del CML.",
+    "t_min": "Espesor mínimo requerido en servicio (presión o estructural). Bajo este valor: evaluar FFS (API 579-1), reparar o reemplazar.",
+    "t_alerta": "t mín + CR · 2 años: margen para gestionar OT, repuestos y parada (criterio del grupo).",
+    "cr": "Velocidad de corrosión adoptada: la mayor entre largo y corto plazo (criterio conservador, API 510 / 570 §7.1.1).",
+    "rl": "Vida remanente = (t actual − t mín) / CR. Años hasta llegar al mínimo con la CR adoptada.",
+    "proxima": "Próxima medición de espesores: última medición + mín(RL/2; máximo de la norma). API 510 §6.5.1.1, API 570 Tabla 6.3.3, API 653 §6.3.3.2.",
+    "nominal": "Espesor de catálogo o de plancha con que se fabricó el componente.",
+    "diseno": "Espesor de compra: requerido + sobreespesor de corrosión, corregido por la tolerancia de fabricación.",
+    "requerido": "Espesor que exige el código de diseño solo por presión o carga hidrostática, sin sobreespesor.",
+    "medido": "Última lectura de UT del CML evaluado.",
+    "df": "Factor de daño: multiplica la frecuencia genérica de falla. No es una probabilidad (API 581 Parte 2 §4).",
+    "pf": "Frecuencia de falla = gff · FMS · Df, en fallas por año (API 581 Parte 1 §4.1).",
+    "ra": "Riesgo de área = Pf · CA: superficie afectada esperada por año (m²/año).",
+    "re": "Riesgo económico = Pf · CE: costo esperado por año.",
+    "prioridad": "Nivel de la matriz 5×5 (el peor entre área y económica) y acción recomendada. POF 1–5 según API 581 Parte 1, Tabla 4.1M.",
+}
+
+
+def ayuda(clave):
+    """Ícono «?» con una definición breve; se muestra al pasar el mouse o con el teclado (foco)."""
+    tip = esc(GLOSARIO.get(clave, ""))
+    return f'<span class="ayuda" tabindex="0" role="img" aria-label="{tip}" data-tip="{tip}">?</span>' if tip else ""
+
+
+def stat(label, valor, unidad="", sub="", clase="", ayuda_k=None):
     u = f"<small>{unidad}</small>" if unidad else ""
     s = f'<div class="s">{sub}</div>' if sub else ""
-    return f'<div class="stat {clase}"><div class="l">{label}</div><div class="v">{valor}{u}</div>{s}</div>'
+    a = ayuda(ayuda_k) if ayuda_k else ""
+    return f'<div class="stat {clase}"><div class="l">{label}{a}</div><div class="v">{valor}{u}</div>{s}</div>'
 
 
 def plegable(titulo, cuerpo, abierto=False):
@@ -173,8 +199,44 @@ def calc_r(titulo, r, unidad="mm", n=3, valor=None):
 
 
 # ------------------------------------------------------------------ evaluación
+def _distinto(a, b):
+    try:
+        return abs(float(a) - float(b)) > 1e-9
+    except (TypeError, ValueError):
+        return str(a) != str(b)
+
+
+def campo_num(act, campo, label, val, base=None, step="any", fmt=None):
+    """Input numérico. Si el valor difiere del caso demo (base), se resalta y ofrece «↺» para volver a él."""
+    editado = base is not None and _distinto(val, base)
+    rev = (f'<button type="button" class="revertir" data-act="revertir" data-tipo="{act}" data-campo="{campo}" '
+           f'title="Volver al valor del caso demo ({esc(fmt(base) if fmt else vin(base))})" '
+           f'aria-label="Volver {esc(campo)} al valor del caso demo">↺</button>') if editado else ""
+    return (f'<label class="{"editado" if editado else ""}">{label}<span class="campo">'
+            f'<input type="number" step="{step}" value="{vin(val)}" data-act="{act}" data-campo="{campo}">{rev}</span></label>')
+
+
+def aviso_cambio(txt):
+    """Resultado del último cambio («antes → después»), visible hasta el próximo cambio de vista."""
+    return f'<div class="cambio" role="status"><b>Último cambio</b><span>{txt}</span></div>' if txt else ""
+
+
+_CTX = {"hoy": None}  # fecha de evaluación vigente (la fija evaluar_todo en cada render)
+
+
+def fecha_evaluacion(data):
+    """Fecha de evaluación del proyecto: la elegida por el usuario o, si no hay, la del computador."""
+    f = data.get("fecha_evaluacion")
+    return date.fromisoformat(f) if f else date.today()
+
+
+def hoy_eval():
+    return _CTX["hoy"] or date.today()
+
+
 def evaluar_todo(data, hoy=None):
-    hoy = hoy or date.today()
+    hoy = hoy or fecha_evaluacion(data)
+    _CTX["hoy"] = hoy
     plazo = data.get("plazo_intervencion_anios", 2.0)
     res = {}
     for eq in data["equipos"]:
@@ -209,10 +271,12 @@ def sidebar(data, res, sel_id, filtros=None):
                 for e in eqs:
                     cond = res[e["id"]]["cond"]
                     act = "activo" if e["id"] == sel_id else ""
+                    desc = e.get("descripcion") or FAMILIAS[e["familia"]]
                     h.append(f'<div class="eq-item {act}" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(e["id"])}" '
-                             f'title="{CONDICION[cond]}" aria-label="{esc(e["tag"])}, {CONDICION[cond]}">'
-                             f'<span class="punto" style="background:{COLOR[cond]}"></span>{esc(e["tag"])}'
-                             f'<small>{FAMILIAS[e["familia"]].split()[0]}</small></div>')
+                             f'title="{esc(e["tag"])} · {esc(desc)} · {CONDICION[cond]}" aria-label="{esc(e["tag"])}, {CONDICION[cond]}">'
+                             f'<span class="punto" style="background:{COLOR[cond]}"></span>'
+                             f'<span class="eq-txt"><span class="eq-tag">{esc(e["tag"])}</span>'
+                             f'<small>{FAMILIAS[e["familia"]].split()[0]} · {esc(desc)}</small></span></div>')
                 h.append('</li>')
             h.append('</ul></li>')
         h.append('</ul></li>')
@@ -283,10 +347,27 @@ def ficha_plano(e, r):
 def plano(data, res, filtros):
     """Plano esquemático (sin escala) de la planta: áreas › sistemas › equipos, con avisos por condición."""
     visibles = {e["id"] for e in filtrar(data, res, filtros)}
-    arbol = {}
+    plantas = {}
     for e in data["equipos"]:
         u = e["ubicacion"]
-        arbol.setdefault(u["area"], {}).setdefault(u["sistema"], []).append(e)
+        plantas.setdefault(u["planta"], {}).setdefault(u["area"], {}).setdefault(u["sistema"], []).append(e)
+    bloques = [(planta, areas_planta(arbol, res, visibles, filtros)) for planta, arbol in plantas.items()]
+    if len(bloques) == 1:
+        cuerpo = bloques[0][1]
+    else:
+        cuerpo = "".join(f'<div class="pl-planta"><div class="pl-planta-nom">{esc(pl)}</div><div class="pl-areas">{ar}</div></div>'
+                         for pl, ar in bloques)
+    leyenda = "".join(f'<span><span class="punto" style="background:{COLOR[k]}"></span>{CONDICION[k]}</span>'
+                      for k in ("normal", "alerta", "vencida", "bajo_minimo", "insuficiente"))
+    return ('<div class="card"><div class="card-cab"><h2>Plano de planta</h2>'
+            '<span class="muted">Esquema sin escala · selecciona un equipo para ver sus CML</span></div>'
+            f'<div class="plano"><span class="pl-norte" aria-hidden="true">N<br>↑</span>{cuerpo}</div>'
+            f'<div class="pl-leyenda">{leyenda}<span><span class="pl-aviso mini" style="--c:{COLOR["alerta"]}">{TRIANGULO}</span>'
+            'Aviso: CML en alerta, vencido o bajo el mínimo</span></div></div>')
+
+
+def areas_planta(arbol, res, visibles, filtros):
+    """Áreas (con sus sistemas y equipos) de una planta, para el plano."""
     areas = []
     for area in sorted(arbol):
         sistemas, n_av = [], 0
@@ -320,13 +401,7 @@ def plano(data, res, filtros):
         areas.append(f'<section class="pl-area{sel}"><button class="pl-area-cab" data-act="ir_area" data-area="{esc(area)}" '
                      f'title="Filtrar la tabla por esta área"><span>{esc(area)}<small>{n_eq} equipo(s)</small></span>{av}</button>'
                      f'{"".join(sistemas)}</section>')
-    leyenda = "".join(f'<span><span class="punto" style="background:{COLOR[k]}"></span>{CONDICION[k]}</span>'
-                      for k in ("normal", "alerta", "vencida", "bajo_minimo", "insuficiente"))
-    return ('<div class="card"><div class="card-cab"><h2>Plano de planta</h2>'
-            '<span class="muted">Esquema sin escala · selecciona un equipo para ver sus CML</span></div>'
-            f'<div class="plano"><span class="pl-norte" aria-hidden="true">N<br>↑</span>{"".join(areas)}</div>'
-            f'<div class="pl-leyenda">{leyenda}<span><span class="pl-aviso mini" style="--c:{COLOR["alerta"]}">{TRIANGULO}</span>'
-            'Aviso: CML en alerta, vencido o bajo el mínimo</span></div></div>')
+    return "".join(areas)
 
 
 # ------------------------------------------------------------------ panel
@@ -347,7 +422,8 @@ def filas_panel(data, res, filtros):
                           "CML": c["id"], "Componente": c["componente"], "t_actual [mm]": v["t_actual"],
                           "t_min [mm]": x["t_min"], "t_alerta [mm]": x["t_alerta"], "CR [mm/año]": v["cr"],
                           "RL [años]": x["rl"], "Próxima inspección": x.get("proxima_txt") or x["proxima"], "Condición": x["condicion"],
-                          "_eq": e["id"], "_cml": c["id"]})
+                          "Intervalo [años]": x["intervalo"], "Criterio": x["criterio"], "Referencia": x["ref_intervalo"],
+                          "_eq": e["id"], "_cml": c["id"], "_problemas": v["problemas"]})
     return filas
 
 
@@ -380,18 +456,121 @@ def panel(data, res, filtros):
                  f'<div class="v"><span style="color:{COLOR[k]}">{ICONO[k]}</span>{n}</div></div>')
     h.append('</div>' + plano(data, res, filtros))
     h.append(f'<div class="card"><div class="card-cab"><h2>Puntos de monitoreo (CML)</h2>{barra}</div>'
-             '<table><tr><th>Equipo</th><th>CML</th><th>Componente</th><th class="num">t actual [mm]</th>'
+             '<div class="tabla-scroll"><table class="tabla-fija" id="tabla-cml"><tr><th>CML · equipo</th><th>Componente</th><th class="num">t actual [mm]</th>'
              '<th class="num">t mín [mm]</th><th class="num">CR [mm/año]</th><th class="num">RL [años]</th><th>Próxima</th><th>Condición</th></tr>')
     for fl in filas:
         h.append(f'<tr class="click" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(fl["_eq"])}" data-cml="{esc(fl["_cml"] or "")}">'
-                 f'<td><b>{esc(fl["Equipo"])}</b><div class="muted">{esc(fl["Familia"])}</div></td><td>{esc(fl["CML"])}</td>'
+                 f'<td><b>{esc(fl["CML"])}</b><div class="muted">{esc(fl["Equipo"])} · {esc(fl["Familia"].split()[0])}</div></td>'
                  f'<td>{esc(fl.get("Componente", ""))}</td><td class="num">{f(fl.get("t_actual [mm]"))}</td>'
                  f'<td class="num">{f(fl.get("t_min [mm]"))}</td><td class="num">{f(fl.get("CR [mm/año]"), 3)}</td>'
                  f'<td class="num">{f(fl.get("RL [años]"), 1)}</td><td>{fecha_cl(fl.get("Próxima inspección"))}</td>'
                  f'<td>{badge(fl["Condición"])}</td></tr>')
     if not filas:
-        h.append('<tr><td colspan="9" class="muted">Ningún CML coincide con los filtros.</td></tr>')
-    h.append('</table><div class="muted" style="margin-top:8px">Ordenado por severidad. Clic en una fila para abrir el equipo.</div></div>')
+        h.append('<tr><td colspan="8" class="muted">Ningún CML coincide con los filtros.</td></tr>')
+    h.append('</table></div><div class="muted" style="margin-top:8px">Ordenado por severidad. Clic en una fila para abrir el equipo.</div></div>')
+    h.append(calidad_datos(data, res, filtros))
+    return "".join(h)
+
+
+# ------------------------------------------------------------------ calidad de datos (F3)
+def tipo_aviso(msg):
+    m = msg.lower()
+    for clave, tipo in (("insuficiente", "Información insuficiente"), ("posterior", "Fuera de la fecha de evaluación"),
+                        ("futura", "Fecha futura"), ("duplicad", "Fechas duplicadas"), ("inconsistente", "Fechas inconsistentes"),
+                        ("nula o negativa", "CR nula o negativa"), ("reiniciada", "Serie reiniciada"), ("inválid", "Dato inválido")):
+        if clave in m:
+            return tipo
+    return "Otro"
+
+
+def avisos_datos(data, res, filtros=None):
+    """Reúne los avisos de calidad de datos de los CML (§4.4 del enunciado), respetando los filtros de Planta."""
+    out = []
+    for e in filtrar(data, res, filtros or {}):
+        r = res[e["id"]]
+        if r["error"]:
+            out.append({"eq": e, "cml": None, "tipo": "Error de cálculo", "msg": r["error"]})
+            continue
+        for c in e["cmls"]:
+            for msg in r["cmls"][c["id"]]["corrosion"]["problemas"]:
+                out.append({"eq": e, "cml": c["id"], "tipo": tipo_aviso(msg), "msg": msg})
+    return out
+
+
+def calidad_datos(data, res, filtros=None):
+    av = avisos_datos(data, res, filtros)
+    if not av:
+        return '<div class="card"><h2>Calidad de datos</h2><p class="muted">Sin avisos: todas las series son comparables y consistentes.</p></div>'
+    filas = "".join(
+        f'<tr class="click" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(a["eq"]["id"])}" data-cml="{esc(a["cml"] or "")}">'
+        f'<td><b>{esc(a["cml"] or "—")}</b><div class="muted">{esc(a["eq"]["tag"])}</div></td>'
+        f'<td><span class="etiqueta">{esc(a["tipo"])}</span></td><td>{esc(a["msg"])}</td><td class="fa-ir">Revisar ›</td></tr>' for a in av)
+    n_cml = len({(a["eq"]["id"], a["cml"]) for a in av})
+    cuerpo = ('<div class="tabla-scroll"><table><tr><th>CML · equipo</th><th>Tipo</th><th>Detalle</th><th></th></tr>' + filas + '</table></div>'
+              '<div class="muted" style="margin-top:8px">Avisos detectados al calcular la corrosión: datos insuficientes, fechas inconsistentes, '
+              'velocidades nulas o negativas y series reiniciadas por reemplazo, reparación o cambio de punto.</div>')
+    return (f'<div class="card" id="calidad"><div class="card-cab"><h2>Calidad de datos</h2>'
+            f'<span class="muted">{len(av)} aviso(s) en {n_cml} punto(s)</span></div>{cuerpo}</div>')
+
+
+# ------------------------------------------------------------------ plan de inspección (F5)
+MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def filas_plan(data, res):
+    """Plan de mediciones de espesor: inmediatas y vencidas primero, luego por fecha; sin fecha al final."""
+    filas = [fl for fl in filas_panel(data, res, {}) if fl["_cml"]]
+
+    def grupo(fl):
+        prox = fl["Próxima inspección"]
+        if fl["Condición"] == "bajo_minimo":
+            return (0, "Acción inmediata")
+        if fl["Condición"] == "vencida":
+            return (1, "Vencidas")
+        if prox and re.match(r"^\d{4}-\d{2}", str(prox)):
+            a, m = int(prox[:4]), int(prox[5:7])
+            return (2, f"{MESES[m - 1].capitalize()} {a}")
+        return (3, "Sin fecha: falta información")
+    return sorted(((grupo(fl), fl) for fl in filas),
+                  key=lambda t: (t[0][0], str(t[1]["Próxima inspección"] or ""), t[1]["CML"]))
+
+
+def vista_plan(data, res):
+    plan = filas_plan(data, res)
+    hoy = hoy_eval()
+    lim = date.fromordinal(hoy.toordinal() + 365).isoformat()
+    n_inm = sum(1 for g, _ in plan if g[0] == 0)
+    n_ven = sum(1 for g, _ in plan if g[0] == 1)
+    n_12 = sum(1 for g, fl in plan if g[0] == 2 and fl["Próxima inspección"] <= lim)
+    n_sin = sum(1 for g, _ in plan if g[0] == 3)
+    h = ['<div class="cabecera"><h1>Plan de inspección</h1>'
+         f'<span class="desc">Próximas mediciones de espesor por fecha · evaluado al {hoy:%d-%m-%Y}</span>'
+         '<div class="der"><button class="chico secundario" data-act="exportar_plan">Exportar plan CSV</button></div></div>',
+         '<div class="stats">',
+         f'<div class="stat estado" style="--c:{COLOR["bajo_minimo"]}"><div class="l">Acción inmediata</div><div class="v">{n_inm}</div><div class="s">bajo el mínimo</div></div>',
+         f'<div class="stat estado" style="--c:{COLOR["vencida"]}"><div class="l">Vencidas</div><div class="v">{n_ven}</div><div class="s">fecha ya cumplida</div></div>',
+         stat("Próximos 12 meses", n_12, sub=f"hasta {fecha_cl(lim)}"),
+         stat("Sin fecha", n_sin, sub="requieren 2.ª medición"),
+         stat("Total", len(plan), sub="CML en el plan", clase="destacado"), '</div>', '<div class="card plan">']
+    h.append('<div class="tabla-scroll"><table class="tabla-fija tabla-plan"><colgroup><col style="width:24%"><col style="width:11%">'
+             '<col style="width:17%"><col><col style="width:17%"></colgroup>'
+             '<tr><th>CML · equipo</th><th>Fecha</th><th>Tarea</th><th>Criterio</th><th>Condición</th></tr>')
+    actual = None
+    for (orden, titulo), fl in plan:
+        if titulo != actual:
+            n = sum(1 for g, _ in plan if g[1] == titulo)
+            h.append(f'<tr class="plan-grupo"><th colspan="5">{esc(titulo)} <span class="muted">· {n} CML</span></th></tr>')
+            actual = titulo
+        fecha = "Inmediata" if orden == 0 else fecha_cl(fl["Próxima inspección"])
+        iv = f'{f(fl["Intervalo [años]"], 1)} años · ' if fl["Intervalo [años]"] else ""
+        h.append(f'<tr class="click" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(fl["_eq"])}" data-cml="{esc(fl["_cml"])}">'
+                 f'<td><b>{esc(fl["CML"])}</b><div class="muted">{esc(fl["Equipo"])} · {esc(fl.get("Componente", ""))}</div></td>'
+                 f'<td><b>{fecha}</b></td><td>Medición de espesores (UT)</td>'
+                 f'<td>{iv}{esc(fl["Criterio"])}<div class="muted">{esc(fl["Referencia"])}</div></td><td>{badge(fl["Condición"])}</td></tr>')
+    if not plan:
+        h.append('<tr><td colspan="5" class="muted">No hay CML registrados.</td></tr>')
+    h.append('</table></div>')
+    h.append('</div>')
     return "".join(h)
 
 
@@ -473,19 +652,20 @@ def vista_cml(eq, c, x):
     h = [f'<div class="cabecera" style="margin-top:6px"><h2 style="margin:0">{esc(c["id"])}</h2>'
          f'<span class="desc">{esc(c["componente"])} · {esc(c["ubicacion"])}</span>{badge(x["condicion"])}</div>',
          '<div class="stats">',
-         stat("t actual", f(v["t_actual"]), "mm", fecha_cl(v["fecha_actual"])),
-         stat("t mínimo", f(x["t_min"]), "mm", "servicio"),
-         stat("t alerta", f(x["t_alerta"]), "mm", "t_min + CR·2 años"),
-         stat("Corrosión", f(v["cr"], 3), "mm/año", "adoptada"),
-         stat("Vida remanente", f(x["rl"], 1), "años"),
-         stat("Próxima inspección", prox_txt(x), "", "evaluar FFS / reparar" if x.get("proxima_txt") else f"intervalo {f(x['intervalo'], 1)} años", "destacado"),
+         stat("t actual", f(v["t_actual"]), "mm", fecha_cl(v["fecha_actual"]), ayuda_k="t_actual"),
+         stat("t mínimo", f(x["t_min"]), "mm", "servicio", ayuda_k="t_min"),
+         stat("t alerta", f(x["t_alerta"]), "mm", "t_min + CR·2 años", ayuda_k="t_alerta"),
+         stat("Corrosión", f(v["cr"], 3), "mm/año", "adoptada", ayuda_k="cr"),
+         stat("Vida remanente", f(x["rl"], 1), "años", ayuda_k="rl"),
+         stat("Próxima inspección", prox_txt(x), "", "evaluar FFS / reparar" if x.get("proxima_txt") else f"intervalo {f(x['intervalo'], 1)} años",
+              "destacado", ayuda_k="proxima"),
          '</div>']
     for p in v["problemas"]:
         h.append(f'<div class="error">✕ {esc(p)}</div>')
     if eq["familia"] == "tanque":
         h.append('<div class="info">Alcance API 653: solo espesores del manto. Fondo, techo e inspección interna: datos pendientes.</div>')
     h.append(f'<div class="grid-cml"><div class="card grafico">{grafico(eq, c, x)}</div>'
-             f'<div class="card"><h2>Nueva medición</h2>{form_medicion(c)}</div></div>')
+             f'<div class="card no-imprimir"><h2>Nueva medición</h2>{form_medicion(c)}</div></div>')
     h.append(f'<div class="card ficha-cml">{ficha_cml(eq, c, x)}</div>')
     filas = []
     for i, m in sorted(enumerate(c.get("mediciones", [])), key=lambda t: t[1]["fecha"], reverse=True):
@@ -498,7 +678,7 @@ def vista_cml(eq, c, x):
     tabla = ('<table><tr><th>Fecha</th><th class="num">Espesor [mm]</th><th>Técnica</th><th>Observaciones</th><th></th></tr>'
              + ("".join(filas) or '<tr><td colspan="5" class="muted">Sin mediciones. Registra la primera en «Nueva medición».</td></tr>')
              + '</table>')
-    h.append(f'<div class="card"><h2>Historial de mediciones ({len(filas)})</h2>{tabla}</div>')
+    h.append(f'<div class="card"><h2>Historial de mediciones ({len(filas)})</h2><div class="tabla-scroll">{tabla}</div></div>')
     h.append(plegable("Ver cálculos (ecuaciones, entradas y referencias)", calculos_cml(eq, c, x)))
     pos = ('<form class="f" id="form_xy">'
            f'<label>x [%]<input type="number" step="any" name="x" value="{pct(c["x"])}" min="0" max="100"></label>'
@@ -510,11 +690,11 @@ def vista_cml(eq, c, x):
 
 
 def form_medicion(c):
-    hoy = date.today().isoformat()
+    hoy = min(hoy_eval(), date.today()).isoformat()
     tec = "".join(f"<option>{t}</option>" for t in TECNICAS)
     ev = "".join(f'<option value="{k}">{v}</option>' for k, v in EVENTOS.items())
     return (f'<form class="f col" id="form_med">'
-            f'<label>Fecha<input type="date" name="fecha" value="{hoy}" required></label>'
+            f'<label>Fecha<input type="date" name="fecha" value="{hoy}" max="{date.today().isoformat()}" required></label>'
             f'<label>Técnica<select name="tecnica">{tec}</select></label>'
             f'<label>Espesor<input type="number" step="0.001" name="espesor" placeholder="0,00" required></label>'
             f'<label>Unidad<select name="unidad"><option>mm</option><option>in</option></select></label>'
@@ -539,10 +719,12 @@ def grafico(eq, c, x):
     fig.patch.set_facecolor(FONDO)
     ax.set_facecolor(FONDO)
     v = x["corrosion"]
-    fechas = [date.fromisoformat(m["fecha"][:10]) for m in ms] or [date.today()]
+    hoy = hoy_eval()
+    txt_hoy = "Hoy" if hoy == date.today() else f"Evaluación {hoy:%d-%m-%Y}"
+    fechas = [date.fromisoformat(m["fecha"][:10]) for m in ms] or [hoy]
     if x["proxima"]:
         fechas.append(date.fromisoformat(x["proxima"]))
-    x_fin = max(fechas + [date.today()])
+    x_fin = max(fechas + [hoy])
 
     def etiqueta(y, texto, color):
         ax.annotate(texto, (1.0, y), xycoords=("axes fraction", "data"), xytext=(10, 0), textcoords="offset points",
@@ -583,8 +765,8 @@ def grafico(eq, c, x):
         ax.annotate("Próx. insp.", (fp, 1.0), xycoords=("data", "axes fraction"), xytext=(-4, -2),
                     textcoords="offset points", fontsize=8, color=TINTA2, ha="right", va="top",
                     bbox=dict(boxstyle="square,pad=0.15", fc=FONDO, ec="none"))
-    ax.axvline(date.today(), color=MUTED, lw=1, alpha=.6, zorder=1)
-    ax.annotate("Hoy", (date.today(), 1.0), xycoords=("data", "axes fraction"), xytext=(-4, -14),
+    ax.axvline(hoy, color=MUTED, lw=1, alpha=.6, zorder=1)
+    ax.annotate(txt_hoy, (hoy, 1.0), xycoords=("data", "axes fraction"), xytext=(-4, -14),
                 textcoords="offset points", fontsize=8, color=MUTED, ha="right", va="top",
                 bbox=dict(boxstyle="square,pad=0.15", fc=FONDO, ec="none"))
     ax.set_xlim(right=date.fromordinal(x_fin.toordinal() + 200))
@@ -664,6 +846,15 @@ def vista_equipo(data, res, eq, cml_sel, cabecera=True):
              f'<div class="card"><h2>Ficha técnica</h2>{ficha(eq)}<h3>CML / TML</h3><div class="chips">{"".join(chips)}</div>'
              f'{plegable("+ Agregar CML", nuevo)}</div></div>')
 
+    if not r["error"] and eq["cmls"]:
+        filas = "".join(
+            f'<tr><td>{esc(cc["id"])}</td><td>{esc(cc["componente"])}</td><td class="num">{f(r["cmls"][cc["id"]]["corrosion"]["t_actual"])}</td>'
+            f'<td class="num">{f(r["cmls"][cc["id"]]["t_min"])}</td><td class="num">{f(r["cmls"][cc["id"]]["corrosion"]["cr"], 3)}</td>'
+            f'<td class="num">{f(r["cmls"][cc["id"]]["rl"], 1)}</td><td>{prox_txt(r["cmls"][cc["id"]])}</td>'
+            f'<td>{CONDICION[r["cmls"][cc["id"]]["condicion"]]}</td></tr>' for cc in eq["cmls"])
+        h.append('<div class="card solo-imprimir"><h2>Resumen de CML</h2><table><tr><th>CML</th><th>Componente</th><th class="num">t actual [mm]</th>'
+                 '<th class="num">t mín [mm]</th><th class="num">CR [mm/año]</th><th class="num">RL [años]</th><th>Próxima</th><th>Condición</th></tr>'
+                 + filas + '</table></div>')
     c = next((c for c in eq["cmls"] if c["id"] == cml_sel), None)
     if c and r["cmls"].get(c["id"]):
         h.append(vista_cml(eq, c, r["cmls"][c["id"]]))
@@ -681,7 +872,7 @@ def vista_equipo(data, res, eq, cml_sel, cabecera=True):
     return "".join(h)
 
 
-def pagina_equipo(data, res, eq, cml_sel, sub="resumen"):
+def pagina_equipo(data, res, eq, cml_sel, sub="resumen", base=None, cambio=""):
     """Página de un equipo: migas de pan (ubicación técnica), encabezado y subnavegación Resumen | Diseño."""
     r = res[eq["id"]]
     u = eq["ubicacion"]
@@ -696,10 +887,14 @@ def pagina_equipo(data, res, eq, cml_sel, sub="resumen"):
     cab = (f'{migas}<div class="cabecera cabecera-eq"><div><span class="eyebrow">{FAMILIAS[eq["familia"]]} · '
            f'{esc(eq["codigo_diseno"])} / {esc(eq["codigo_servicio"])}</span>'
            f'<h1>{esc(eq["tag"])} {badge(r["cond"])}</h1><span class="desc">{esc(eq["descripcion"])}</span></div>'
-           '<div class="der"><button class="chico secundario" data-act="editar_eq">Editar</button>'
+           '<div class="der"><button class="chico secundario" data-act="imprimir" title="Informe para imprimir o guardar en PDF">Imprimir ficha</button>'
+           '<button class="chico secundario" data-act="editar_eq">Editar</button>'
            '<button class="chico peligro" data-act="borrar_eq">Eliminar</button></div></div>'
+           f'<div class="solo-imprimir">Informe de integridad · {esc(eq["tag"])} · evaluado al {hoy_eval():%d-%m-%Y} · '
+           f'{esc(u["planta"])} › {esc(u["area"])} › {esc(u["sistema"])}</div>'
            f'<div class="segmentado" role="tablist" aria-label="Vista del equipo">{pestanas}</div>')
-    cuerpo = vista_diseno(eq, r, cabecera=False) if sub == "diseno" else vista_equipo(data, res, eq, cml_sel, cabecera=False)
+    cuerpo = (vista_diseno(eq, r, cabecera=False, base=base, cambio=cambio) if sub == "diseno"
+              else vista_equipo(data, res, eq, cml_sel, cabecera=False))
     return cab + cuerpo
 
 
@@ -727,7 +922,7 @@ def vista_inicio(data, res):
     atencion = puntos_atencion(data, res)
     proximas = sorted(fl["Próxima inspección"] for fl in filas
                       if fl["Próxima inspección"] and re.match(r"^\d{4}-", str(fl["Próxima inspección"]))
-                      and fl["Próxima inspección"] >= date.today().isoformat())
+                      and fl["Próxima inspección"] >= hoy_eval().isoformat())
     n_crit = sum(1 for fl in atencion if fl["Condición"] in ("bajo_minimo", "vencida"))
     h = ['<section class="hero"><span class="eyebrow">Prototipo académico · MAN040-B</span>'
          '<h1>Integridad de equipos estáticos,<br>en un solo lugar.</h1>'
@@ -853,12 +1048,12 @@ TOLERANCIA = {
 }
 
 
-def vista_diseno(eq, res_eq, cabecera=True):
+def vista_diseno(eq, res_eq, cabecera=True, base=None, cambio=""):
     fam = eq["familia"]
     d = eq["diseno"]
     mat = MATERIALES[eq["material"]]
-    campos = "".join(f'<label>{label}<input type="number" step="any" value="{vin(d.get(k, ""))}" data-act="diseno" data-campo="{k}"></label>'
-                     for k, label in CAMPOS_DISENO[fam])
+    base = base or {}
+    campos = "".join(campo_num("diseno", k, label, d.get(k, ""), base.get(k)) for k, label in CAMPOS_DISENO[fam])
     if fam == "tanque":
         s_txt = f'{mat["nombre"]} · Sd = {f(mat["Sd"], 0)} MPa · Y = {f(mat["YS"], 0)} · T = {f(mat["TS"], 0)} MPa'
     else:
@@ -869,9 +1064,11 @@ def vista_diseno(eq, res_eq, cabecera=True):
             s_txt = f'<span class="fail">{esc(e)}</span>'
     h = ([f'<div class="cabecera"><h1>{esc(eq["tag"])}</h1><span class="desc">Condiciones de diseño · {FAMILIAS[fam]}</span></div>']
          if cabecera else []) + [
+         aviso_cambio(cambio),
          f'<div class="card"><h2>Variables de diseño</h2><form class="f">{campos}</form>'
          f'<div class="info" style="margin-top:12px">{s_txt}&nbsp;<span class="muted">· {esc(mat["ref"])}</span></div>'
-         '<div class="muted">Cambia un valor y presiona Enter o Tab: se recalcula todo el equipo.</div></div>']
+         '<div class="muted">Cambia un valor y presiona Enter o Tab: se recalcula todo el equipo. '
+         'Los campos distintos del caso demo quedan marcados; «↺» vuelve al valor original.</div></div>']
     if res_eq["error"]:
         h.append(f'<div class="error">✕ {esc(res_eq["error"])}</div>')
         return "".join(h)
@@ -885,10 +1082,12 @@ def vista_diseno(eq, res_eq, cabecera=True):
             x = res_eq["cmls"][c["id"]]
         dis = es.espesor_diseno(eq, c)
         tn = (c or {}).get("t_nom_mm") or eq["t_nom_mm"]
-        items = [("Nominal", tn, "#aeaeb2", "Diseño y fabricación"), ("Diseño / compra", dis["valor"], "#5fb38a", "Diseño y fabricación"),
-                 ("Requerido por cálculo", dis["t_calc"], "#9ccfb3", "Diseño y fabricación"),
-                 ("Medido (último)", x["corrosion"]["t_actual"], "#1f7a4d", "En servicio"),
-                 ("Alerta", x["t_alerta"], "#fab219", "En servicio"), ("Mínimo en servicio", x["t_min"], "#d03b3b", "En servicio")]
+        items = [("Nominal" + ayuda("nominal"), tn, "#aeaeb2", "Diseño y fabricación"),
+                 ("Diseño / compra" + ayuda("diseno"), dis["valor"], "#5fb38a", "Diseño y fabricación"),
+                 ("Requerido por cálculo" + ayuda("requerido"), dis["t_calc"], "#9ccfb3", "Diseño y fabricación"),
+                 ("Medido (último)" + ayuda("medido"), x["corrosion"]["t_actual"], "#1f7a4d", "En servicio"),
+                 ("Alerta" + ayuda("t_alerta"), x["t_alerta"], "#fab219", "En servicio"),
+                 ("Mínimo en servicio" + ayuda("t_min"), x["t_min"], "#d03b3b", "En servicio")]
         tope = max(it[1] for it in items if it[1]) * 1.05
         if fam == "tanque" and c:
             titulo = f'Espesores de pared [mm] · {esc(c["id"])} · {esc(c["componente"])}'
@@ -956,7 +1155,7 @@ def calcular_rbi(eq, res_eq):
     v = x["corrosion"]
     mat = MATERIALES[eq["material"]]
     S = esfuerzo_admisible(eq["material"], eq["diseno"]["T_diseno_C"])
-    f_eval = cfg.get("fecha_eval") or date.today().isoformat()
+    f_eval = hoy_eval().isoformat()  # fecha de evaluación global del proyecto
     edad = co.anios(eq["fecha_servicio"], f_eval)
     cr = v["cr_lp"] if v["cr_lp"] and v["cr_lp"] > 0 else (v["cr"] or 0.0)
     ent = dict(cr=cr, edad=edad, t_rdi=c.get("t_nom_mm") or eq["t_nom_mm"], t_min=x["t_min"], S=S,
@@ -970,41 +1169,122 @@ def calcular_rbi(eq, res_eq):
             "cr_adoptada": v["cr"]}
 
 
-def vista_rbi(data, res):
-    eq = next((e for e in data["equipos"] if e.get("rbi") and e["familia"] == "recipiente"), None)
-    if not eq:
-        return '<div class="info">No hay un recipiente con caso RBI definido.</div>'
+RBI_BASE = {"confianza": "baja", "inspecciones": {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0}, "pscore": 50, "f_om": 1.0,
+            "C_A_m2": 100.0, "C_E": 100000.0, "moneda": "USD",
+            "base_valoracion": "Valores por defecto: ajustar al escenario del equipo",
+            "escenario": "Fuga por adelgazamiento generalizado de la envolvente"}
+COLOR_NIVEL = {"Bajo": "#0ca30c", "Medio": "#fab219", "Medio-alto": "#ec835a", "Alto": "#d03b3b"}
+
+
+def recipientes(data):
+    return [e for e in data["equipos"] if e["familia"] == "recipiente"]
+
+
+def riesgos_planta(data, res):
+    """Riesgo de cada recipiente con evaluación RBI (para la matriz de la planta)."""
+    out = []
+    for e in recipientes(data):
+        if e.get("rbi") and not res[e["id"]]["error"] and e["cmls"]:
+            try:
+                out.append((e, calcular_rbi(e, res[e["id"]])))
+            except (ValueError, KeyError, StopIteration):
+                continue
+    return out
+
+
+def matriz_planta(puntos, sel_id, rango=None):
+    """Matriz 5×5 con un punto por equipo: POF vs. la mayor categoría de consecuencia (área o económica)."""
+    celdas = {}
+    for e, R in puntos:
+        r = R["r"]
+        cof = max(r["cat_area"], r["cat_fin"])
+        celdas.setdefault((r["cat_pof"], cof), []).append(e)
+    h = ['<div class="matriz matriz-planta">']
+    for p_ in "54321":
+        h.append(f'<div class="eje">{p_}</div>')
+        for c in "ABCDE":
+            n = rbi.nivel_riesgo(int(p_), c)
+            chips = "".join(f'<button class="m-chip {"sel" if e["id"] == sel_id else ""}" data-act="sel_rbi_eq" data-id="{esc(e["id"])}" '
+                            f'title="{esc(e["tag"])}" aria-label="{esc(e["tag"])}">{(rango or {}).get(e["id"], esc(e["tag"]))}</button>'
+                            for e in celdas.get((p_, c), []))
+            h.append(f'<div class="m-{n}" title="POF {p_} · COF {c}: {n}">{chips}</div>')
+    h.append('<div></div>' + "".join(f'<div class="eje">{c}</div>' for c in "ABCDE"))
+    h.append('</div><div class="matriz-pie">Filas: POF · Columnas: mayor categoría de consecuencia (área o económica)</div>')
+    return "".join(h)
+
+
+def vista_rbi(data, res, eq_id=None, base=None, cambio=""):
+    recs = recipientes(data)
+    if not recs:
+        return '<div class="info">No hay recipientes a presión. El RBI implementado cubre adelgazamiento generalizado de recipientes.</div>'
+    eq = next((e for e in recs if e["id"] == eq_id), None) or next((e for e in recs if e.get("rbi")), recs[0])
+    opts = "".join(f'<option value="{esc(e["id"])}" {"selected" if e is eq else ""}>{esc(e["tag"])}'
+                   f'{"" if e.get("rbi") else " (sin evaluar)"}</option>' for e in recs)
+    selector = (f'<label class="sel-rbi">Equipo<select data-act="sel_rbi" aria-label="Equipo a evaluar">{opts}</select></label>'
+                if len(recs) > 1 else "")
+    cab = (f'<div class="cabecera"><h1>RBI · {esc(eq["tag"])}</h1><span class="desc">Adelgazamiento generalizado · API RP 580 / 581 · '
+           f'evaluado al {hoy_eval():%d-%m-%Y}</span><div class="der">{selector}</div></div>')
+    puntos = riesgos_planta(data, res)
+    planta = ""
+    if len(puntos) > 1:
+        orden = sorted(puntos, key=lambda t: (-["Bajo", "Medio", "Medio-alto", "Alto"].index(t[1]["r"]["nivel"]), -t[1]["r"]["R_E"]))
+        ranking = "".join(
+            f'<tr class="click {"sel" if e is eq else ""}" role="button" tabindex="0" data-act="sel_rbi_eq" data-id="{esc(e["id"])}">'
+            f'<td>{i}</td><td><b>{esc(e["tag"])}</b><div class="muted">{esc(R["cml"]["id"])}</div></td>'
+            f'<td class="num">{f(R["con"]["Df"], 1)}</td><td class="num">{sci(R["r"]["Pf"])}</td>'
+            f'<td class="num">{f(R["r"]["R_E"], 0 if R["r"]["R_E"] >= 100 else 2)} {esc(R["r"]["moneda"])}</td>'
+            f'<td><span class="etiqueta" style="box-shadow:inset 3px 0 0 {COLOR_NIVEL[R["r"]["nivel"]]}">{R["r"]["nivel"]}</span></td></tr>'
+            for i, (e, R) in enumerate(orden, 1))
+        planta = (f'<div class="card"><div class="card-cab"><h2>Riesgo de la planta</h2>'
+                  f'<span class="muted">{len(puntos)} equipos evaluados · clic en un equipo para verlo</span></div>'
+                  f'<div class="rbi-planta"><div>{matriz_planta(puntos, eq["id"], {e["id"]: i for i, (e, _) in enumerate(orden, 1)})}</div>'
+                  '<div class="tabla-scroll"><table><tr><th>#</th><th>Equipo</th><th class="num">D_f</th><th class="num">P_f</th>'
+                  f'<th class="num">R_E</th><th>Nivel</th></tr>{ranking}</table>'
+                  '<div class="muted" style="margin-top:8px">Ordenado por nivel de riesgo y luego por riesgo económico. '
+                  'El número de la matriz corresponde a la columna #.</div></div></div></div>')
+    if not eq.get("rbi"):
+        return (cab + '<div class="card"><h2>Este equipo aún no tiene evaluación RBI</h2>'
+                '<p class="muted">Se creará con valores por defecto (confianza baja, sin inspecciones, C<sub>A</sub> = 100 m², '
+                'C<sub>E</sub> = 100.000 USD) que debes ajustar al escenario real del equipo.</p>'
+                '<button data-act="crear_rbi">Crear evaluación RBI</button></div>' + planta)
     if res[eq["id"]]["error"]:
-        return f'<div class="error">{esc(res[eq["id"]]["error"])}</div>'
+        return cab + f'<div class="error">{esc(res[eq["id"]]["error"])}</div>'
+    if not eq["cmls"]:
+        return cab + '<div class="info">El equipo no tiene CML: agrega al menos uno con mediciones para evaluar el riesgo.</div>'
     cfg = eq["rbi"]
+    base = base or {}
     R = calcular_rbi(eq, res[eq["id"]])
     p, e, r = R["con"]["pasos"], R["ent"], R["r"]
     cml_opts = "".join(f'<option {"selected" if c["id"] == cfg["cml"] else ""}>{esc(c["id"])}</option>' for c in eq["cmls"])
     conf_opts = "".join(f'<option {"selected" if k == cfg["confianza"] else ""}>{k}</option>' for k in rbi.PRIOR)
+    b_insp = base.get("inspecciones") or {}
 
-    def num(campo, label, val, step="any"):
-        return f'<label>{label}<input type="number" step="{step}" value="{vin(val)}" data-act="rbi" data-campo="{campo}"></label>'
+    def num(campo, label, val, b=None, step="any", fmt=None):
+        return campo_num("rbi", campo, label, val, b, step, fmt)
 
-    color_nivel = {"Bajo": "#0ca30c", "Medio": "#fab219", "Medio-alto": "#ec835a", "Alto": "#d03b3b"}[r["nivel"]]
-    h = [f'<div class="cabecera"><h1>RBI · {esc(eq["tag"])}</h1><span class="desc">Adelgazamiento generalizado · API RP 580 / 581</span></div>',
+    color_nivel = COLOR_NIVEL[r["nivel"]]
+    h = [cab, aviso_cambio(cambio),
          '<div class="stats">',
-         stat("Factor de daño D_f", f(R["con"]["Df"], 1), "", "adimensional"),
-         stat("Frecuencia de falla P_f", sci(r["Pf"]), "1/año", f"categoría POF {r['cat_pof']}"),
-         stat("Riesgo de área R_A", f(r["R_A"], 4), "m²/año", f"C_A categoría {r['cat_area']}"),
-         stat("Riesgo económico R_E", f(r["R_E"], 0), f"{esc(r['moneda'])}/año", f"C_E categoría {r['cat_fin']}"),
-         f'<div class="stat estado" style="--c:{color_nivel}"><div class="l">Prioridad</div><div class="v">{r["nivel"]}</div>'
+         stat("Factor de daño D_f", f(R["con"]["Df"], 1), "", "adimensional", ayuda_k="df"),
+         stat("Frecuencia de falla P_f", sci(r["Pf"]), "1/año", f"categoría POF {r['cat_pof']}", ayuda_k="pf"),
+         stat("Riesgo de área R_A", f(r["R_A"], 4), "m²/año", f"C_A categoría {r['cat_area']}", ayuda_k="ra"),
+         stat("Riesgo económico R_E", f(r["R_E"], 0 if r["R_E"] >= 100 else 2), f"{esc(r['moneda'])}/año", f"C_E categoría {r['cat_fin']}", ayuda_k="re"),
+         f'<div class="stat estado" style="--c:{color_nivel}"><div class="l">Prioridad{ayuda("prioridad")}</div><div class="v">{r["nivel"]}</div>'
          f'<div class="s">{esc(r["accion"].split(":")[0])}</div></div>',
          '</div>']
+    miles = lambda v: f(v, 0)  # noqa: E731
     entradas = ('<form class="f col">'
                 f'<label>CML gobernante<select data-act="rbi" data-campo="cml">{cml_opts}</select></label>'
-                f'<label>Fecha de evaluación<input type="date" value="{R["f_eval"]}" data-act="rbi" data-campo="fecha_eval"></label>'
+                f'<label>Fecha de evaluación<span class="dato-fijo" title="Fecha global del proyecto: se cambia en la barra superior">'
+                f'{fecha_cl(R["f_eval"])} <small>· barra superior</small></span></label>'
                 f'<label>Confianza en la CR<select data-act="rbi" data-campo="confianza">{conf_opts}</select></label>'
-                + num("pscore", "Puntaje gestión [%]", cfg.get("pscore", 50))
-                + "".join(num(f"insp_{k}", f"Inspecciones {k}", cfg["inspecciones"].get(k, 0), "1") for k in "ABCD")
-                + num("C_A_m2", "Consecuencia de área C_A [m²]", cfg["C_A_m2"])
-                + num("C_E", f"Consecuencia económica C_E [{esc(cfg.get('moneda', 'USD'))}]", cfg["C_E"])
+                + num("pscore", "Puntaje gestión [%]", cfg.get("pscore", 50), base.get("pscore"))
+                + "".join(num(f"insp_{k}", f"Inspecciones {k}", cfg["inspecciones"].get(k, 0),
+                              b_insp.get(k) if base else None, "1") for k in "ABCD")
+                + num("C_A_m2", "Consecuencia de área C_A [m²]", cfg["C_A_m2"], base.get("C_A_m2"))
+                + num("C_E", f"Consecuencia económica C_E [{esc(cfg.get('moneda', 'USD'))}]", cfg["C_E"], base.get("C_E"), fmt=miles)
                 + f'<label>Moneda<input value="{esc(cfg.get("moneda", "USD"))}" data-act="rbi" data-campo="moneda"></label>'
-                + num("f_om", "F_OM (monitoreo)", cfg.get("f_om", 1.0))
+                + num("f_om", "F_OM (monitoreo)", cfg.get("f_om", 1.0), base.get("f_om"))
                 + f'<label class="ancho">Base de valoración<input value="{esc(cfg.get("base_valoracion", ""))}" data-act="rbi" data-campo="base_valoracion"></label>'
                 + '</form>')
     h.append(f'<div class="grid-cml"><div class="card"><h2>Matriz de riesgo</h2><div class="grid2">'
@@ -1016,6 +1296,7 @@ def vista_rbi(data, res):
              f'<tr><td>Con inspecciones registradas</td><td class="num">{f(R["con"]["Df"], 1)}</td><td class="num">{sci(r["Pf"])}</td><td>{r["nivel"]}</td></tr></table>'
              '<div class="muted" style="margin-top:6px">La inspección no recupera espesor: reduce la incertidumbre sobre la CR real (Bayes) y con ello D_f.</div>'
              f'</div><div class="card"><h2>Entradas</h2>{entradas}</div></div>')
+    h.append(planta)
     filas = [
         ("CR largo plazo (usada en D_f)", "API 581 §4.5.2 recomienda la CR de largo plazo", f(e["cr"], 4, "mm/año")),
         ("CR adoptada en vida remanente", "máx(CR_LP; CR_CP), criterio conservador del panel", f(R["cr_adoptada"], 4, "mm/año")),
@@ -1051,6 +1332,13 @@ def casos_validacion():
     rl = co.vida_remanente(0.200 * IN, 0.03225 * IN, 0.011 * IN)
     r_rbi = rbi.df_adelgazamiento(cr=0.3656, edad=10.0, t_rdi=16, t_min=9.672, S=137.9, E=0.85, YS=262.0, TS=482.6,
                                   confianza="media", inspecciones={"B": 2})
+    # Caso de la demo: V-201 / CML-201-03, evaluado al 26-11-2026 (CR de largo plazo de sus 4 mediciones)
+    v201 = co.velocidades([{"fecha": "2016-05-01", "espesor_mm": 16.0}, {"fecha": "2019-05-20", "espesor_mm": 13.5},
+                           {"fecha": "2022-05-18", "espesor_mm": 11.4}, {"fecha": "2025-05-21", "espesor_mm": 9.5}])
+    r201 = rbi.df_adelgazamiento(cr=v201["cr_lp"], edad=co.anios("2016-05-01", "2026-11-26"), t_rdi=16,
+                                 t_min=es.recipiente_ug27(1.5, 750, 20 * KSI, 0.85)["valor"], S=20 * KSI, E=0.85,
+                                 YS=38 * KSI, TS=70 * KSI, confianza="media", inspecciones={"B": 2})
+    rr201 = rbi.riesgo(r201["Df"], 120, 450000)
     return [
         ("Tubería", "t presión B31.3 ec. (3a)", "Ejercicio clase 05: NPS 8 (D = 8,625 in), A53 B, S = 20 ksi, P = 150 psig, E = W = 1, Y = 0,4",
          "B31.3 §304.1.2", 0.03225 * IN, es.tuberia_b313(150 * PSI, 8.625 * IN, 20 * KSI)["valor"], "mm"),
@@ -1074,6 +1362,12 @@ def casos_validacion():
          "API 581 ec. 2.12–2.20", 16.0315, r_rbi["Df"], "—"),
         ("RBI", "R_A con C_A = 120 m²", "P_f = 3,06·10⁻⁵ · 1 · D_f", "API 581 Parte 1 §4.1", 0.058868,
          rbi.riesgo(r_rbi["Df"], 120, 450000)["R_A"], "m²/año"),
+        ("RBI demo", "D_f CML-201-03", "CR_LP = 0,7179 mm/año, age = 10,571 años (01-05-2016 → 26-11-2026), t = 16 mm, "
+         "t_min = 9,672 mm, confianza media, 2 inspecciones B", "API 581 ec. 2.12–2.20", 205.5932, r201["Df"], "—"),
+        ("RBI demo", "R_A CML-201-03", "P_f = 3,06·10⁻⁵ · 1 · 205,59 = 6,291·10⁻³ /año; C_A = 120 m²", "API 581 Parte 1 §4.1",
+         0.75494, rr201["R_A"], "m²/año"),
+        ("RBI demo", "R_E CML-201-03", "P_f = 6,291·10⁻³ /año; C_E = 450.000 USD", "API 581 Parte 1 §4.1",
+         2831.02, rr201["R_E"], "USD/año"),
     ]
 
 
@@ -1113,7 +1407,7 @@ def vista_acerca():
            '<li>CR adoptada = máx(LP; CP). RBI con CR de largo plazo (API 581 §4.5.2).</li>'
            '<li>Reemplazo, reparación o cambio de punto reinicia la serie comparable.</li>'
            '<li>Intervalos: próxima medición de espesores. Tanques: solo manto.</li>'
-           '<li>RBI: modelo académico, solo adelgazamiento generalizado en V-201.</li><li>Datos de la demo: ficticios.</li></ul>')
+           '<li>RBI: modelo académico, solo adelgazamiento generalizado en recipientes (V-201 en la demo).</li><li>Datos de la demo: ficticios.</li></ul>')
     refs = ('<ul>'
             f'<li>{EDICION["B31.3"]}: §304.1.1, §304.1.2, Tablas A-1, A-1A, 302.3.5, 304.1.1.</li>'
             f'<li>{EDICION["VIII-1"]}: UG-16(c), UG-27 · {EDICION["II-D"]}: Tabla 1A.</li>'

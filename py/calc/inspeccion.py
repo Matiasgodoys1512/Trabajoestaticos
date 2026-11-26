@@ -47,7 +47,13 @@ def evaluar_cml(eq, cml, hoy=None, plazo_intervencion=2.0):
     hoy = hoy or date.today()
     esp = evaluar_equipo(eq, cml)
     t_min = esp["t_min"]
-    v = velocidades(cml.get("mediciones", []))
+    # Evaluación "al día": solo cuentan las mediciones registradas hasta la fecha de evaluación
+    todas = cml.get("mediciones", [])
+    vigentes = [m for m in todas if str(m.get("fecha", ""))[:10] <= hoy.isoformat()]
+    v = velocidades(vigentes)
+    if len(vigentes) < len(todas):
+        v["problemas"].append(f"{len(todas) - len(vigentes)} medición(es) posterior(es) a la fecha de evaluación "
+                              f"({hoy.isoformat()}) no se consideran")
     rl = vida_remanente(v["t_actual"], t_min, v["cr"])
     alerta = espesor_alerta(t_min, v["cr"], plazo_intervencion)
     iv, criterio, ref = intervalo(eq["familia"], rl, eq.get("clase"), cr_conocida=v["cr"] is not None)

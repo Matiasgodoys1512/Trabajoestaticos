@@ -28,7 +28,7 @@ Prototipo académico (MAN040-B, Ingeniería en Mantenimiento Industrial) para ge
 
 ## Guion de la demostración (sección 8 del enunciado)
 
-1. **Inicio** → qué hace la app, qué requiere atención y las tres familias; **Planta** → plano interactivo por áreas con avisos y todos los CML ordenados por severidad.
+1. **Inicio** → qué hace la app, qué requiere atención y las tres familias; **Planta** → plano interactivo por áreas con avisos y todos los CML ordenados por severidad. **Plan** → próximas mediciones por mes (exportable a CSV). Fecha de evaluación global en la barra superior.
 2. **Inicio → tarjeta Recipiente** → V-201 se abre en su CML más crítico; las migas muestran la ubicación técnica; elegir CML-201-02 en el esquema.
 3. **Nueva medición** → agregar un espesor: cambian CR, vida remanente, condición y próxima fecha.
 4. **Diseño y espesores** → cambiar presión o temperatura: cambia el espesor requerido.

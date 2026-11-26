@@ -69,7 +69,7 @@ def recorrer(url, salida):
 
         def abrir_equipo(tag):
             ir("equipos")
-            pg.locator(".eq-item", has_text=tag).click()
+            pg.locator(".eq-item").filter(has=pg.locator(".eq-tag", has_text=tag)).click()
             pg.wait_for_timeout(300)
 
         def inicio():
@@ -94,10 +94,11 @@ def recorrer(url, salida):
         def panel():
             ir("planta")
             expect(pg.locator(".stat").first).to_be_visible()
-            assert pg.locator("tr.click").count() >= 9, "faltan filas en Planta"
+            assert pg.locator("#tabla-cml tr.click").count() >= 9, "faltan filas en Planta"
             pg.select_option('.filtros select[data-campo="familia"]', "tanque")
             pg.wait_for_timeout(500)
-            assert pg.locator("tr.click").count() == 3, "el filtro por familia no funcionó"
+            assert pg.locator("#tabla-cml tr.click").count() == 3, "el filtro por familia no funcionó"
+            assert pg.locator("#calidad tr.click").count() == 1, "calidad de datos debe respetar el filtro"
             pg.locator('[data-act="limpiar_filtros"]').click()
             pg.wait_for_timeout(400)
             cap("01_panel")
@@ -165,11 +166,13 @@ def recorrer(url, salida):
             pg.wait_for_timeout(800)
             despues = pg.locator(".esc-fila .val").nth(5).inner_text()
             assert antes != despues, "t requerido no cambió al cambiar P"
+            assert "→" in pg.locator(".cambio").inner_text(), "falta el aviso antes → después"
+            assert pg.locator("label.editado").count() == 1, "el campo editado no quedó marcado"
             cap("04_diseno")
-            campo = pg.locator('input[data-campo="P_diseno_MPa"]')
-            campo.fill("1.5")
-            campo.press("Tab")
-            pg.wait_for_timeout(500)
+            pg.locator('.revertir[data-campo="P_diseno_MPa"]').click()
+            pg.wait_for_timeout(600)
+            assert float(pg.locator('input[data-campo="P_diseno_MPa"]').input_value()) == 1.5, "↺ no volvió al valor del demo"
+            assert pg.locator("label.editado").count() == 0
         paso("Cambiar variable de diseño y ver efecto en espesor", diseno)
 
         def rbi():
@@ -181,6 +184,12 @@ def recorrer(url, salida):
             pg.wait_for_timeout(800)
             despues = pg.locator(".stat").nth(3).inner_text()
             assert antes != despues, "riesgo económico no cambió"
+            campo = pg.locator('input[data-campo="C_E"]')
+            campo.fill("20000000")
+            campo.press("Tab")
+            pg.wait_for_timeout(800)
+            assert "125.823" in pg.locator(".stat").nth(3).inner_text(), "R_E debe mostrarse con separador de miles"
+            assert "Prioridad" in pg.locator(".cambio").inner_text() or "prioridad" in pg.locator(".cambio").inner_text()
             cap("05_rbi")
         paso("Modificar consecuencia y ver cambio de riesgo", rbi)
 
@@ -192,6 +201,24 @@ def recorrer(url, salida):
             assert n.strip() == tot.strip(), f"validación incompleta: {txt}"
             cap("06_validacion")
         paso("Validación: todos los casos OK", validacion)
+
+        def plan_y_fecha():
+            ir("plan")
+            grupos = pg.locator(".plan-grupo").all_inner_texts()
+            assert grupos and grupos[0].startswith("Acción inmediata") and grupos[1].startswith("Vencidas"), grupos
+            cap("06b_plan")
+            ir("planta")
+            assert pg.locator("#calidad tr.click").count() >= 2, "faltan avisos de calidad de datos"
+            vencidas = lambda: int(pg.locator(".stat.estado").nth(3).locator(".v").inner_text().strip()[-1])  # noqa: E731
+            antes = vencidas()
+            pg.fill("#fecha-eval", "2027-06-01")
+            pg.wait_for_timeout(1000)
+            assert vencidas() > antes, "adelantar la fecha de evaluación no venció ningún CML"
+            assert pg.locator("#caja-fecha.fija").count() == 1
+            pg.fill("#fecha-eval", "2026-11-26")
+            pg.wait_for_timeout(800)
+            assert vencidas() == antes
+        paso("Plan de inspección, calidad de datos y fecha de evaluación", plan_y_fecha)
 
         def tanque():
             abrir_equipo("TK-301")
@@ -281,11 +308,35 @@ def recorrer(url, salida):
 
         def teclado():
             ir("equipos")
-            pg.locator(".eq-item", has_text="V-201").focus()
+            pg.locator('.eq-item[data-id="V-201"]').focus()
             pg.keyboard.press("Enter")
             pg.wait_for_timeout(500)
             assert "V-201" in pg.locator(".cabecera h1").inner_text()
         paso("Navegación con teclado", teclado)
+
+        def rbi_planta():
+            import copy as _c
+            import json as _j
+            demo = _j.loads((RAIZ / "data" / "demo.json").read_text(encoding="utf8"))
+            v2 = _c.deepcopy(demo["equipos"][1])
+            v2["id"] = v2["tag"] = "V-202"
+            v2.pop("rbi")
+            demo["equipos"].append(v2)
+            ruta = salida / "dos_recipientes.json"
+            ruta.write_text(_j.dumps(demo), encoding="utf8")
+            pg.set_input_files('input[data-act="importar"]', str(ruta))
+            pg.wait_for_timeout(1500)
+            ir("rbi")
+            pg.select_option('select[data-act="sel_rbi"]', "V-202")
+            pg.wait_for_timeout(500)
+            pg.locator('[data-act="crear_rbi"]').click()
+            pg.wait_for_timeout(800)
+            assert pg.locator(".m-chip").count() == 2, "la matriz de planta no muestra los 2 equipos"
+            assert "#/rbi/V-202" in pg.url, pg.url
+            cap("05b_rbi_planta")
+            menu("restablecer")
+            pg.wait_for_timeout(1500)
+        paso("RBI de otro recipiente y matriz de riesgo de la planta", rbi_planta)
 
         def movil():
             pg.set_viewport_size({"width": 390, "height": 844})

@@ -176,3 +176,32 @@ def test_cr_cero_aplica_intervalo_maximo():
 def test_ug27_presion_excesiva():
     with pytest.raises(ValueError):
         es.recipiente_ug27(200, 750, 137.9, 0.85)
+
+
+# ---------- Fecha de evaluación global (evaluación «al día») ----------
+def test_evaluacion_al_dia_ignora_mediciones_posteriores():
+    import json
+    import pathlib
+    demo = json.loads((pathlib.Path(__file__).resolve().parents[1] / "data" / "demo.json").read_text(encoding="utf8"))
+    v201 = demo["equipos"][1]
+    c = next(c for c in v201["cmls"] if c["id"] == "CML-201-03")
+    hoy = ins.evaluar_cml(v201, c, date(2026, 11, 26))
+    antes = ins.evaluar_cml(v201, c, date(2023, 1, 1))   # antes de la lectura de 2025 (9,50 mm)
+    assert hoy["condicion"] == "bajo_minimo"
+    assert antes["corrosion"]["t_actual"] == pytest.approx(11.40)
+    assert antes["condicion"] != "bajo_minimo"
+    assert any("posterior" in p for p in antes["corrosion"]["problemas"])
+
+
+# ---------- RBI del caso demo: V-201 / CML-201-03 al 26-11-2026 ----------
+def test_rbi_cml_201_03():
+    # Esperado: cálculo independiente (API 581 Parte 2 ec. 2.12–2.20 con math.erf), ver Validación
+    v = co.velocidades([{"fecha": "2016-05-01", "espesor_mm": 16.0}, {"fecha": "2019-05-20", "espesor_mm": 13.5},
+                        {"fecha": "2022-05-18", "espesor_mm": 11.4}, {"fecha": "2025-05-21", "espesor_mm": 9.5}])
+    assert v["cr_lp"] == pytest.approx(0.7179, rel=1e-4)
+    r = rbi.df_adelgazamiento(cr=v["cr_lp"], edad=co.anios("2016-05-01", "2026-11-26"), t_rdi=16,
+                              t_min=es.recipiente_ug27(1.5, 750, 20 * KSI, 0.85)["valor"], S=20 * KSI, E=0.85,
+                              YS=38 * KSI, TS=70 * KSI, confianza="media", inspecciones={"B": 2})
+    assert r["Df"] == pytest.approx(205.5932, rel=1e-4)
+    rr = rbi.riesgo(r["Df"], 120, 20_000_000)
+    assert rr["R_E"] == pytest.approx(125823.05, rel=1e-4)

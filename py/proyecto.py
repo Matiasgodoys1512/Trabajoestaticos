@@ -103,7 +103,8 @@ def validar_proyecto(data):
         raise ErrorProyecto([f"Demasiados equipos (máx. {MAX_EQUIPOS})"])
     plazo = numero(data.get("plazo_intervencion_anios"))
     out = {"version": VERSION, "proyecto": texto(data.get("proyecto"), 120) or "Proyecto",
-           "plazo_intervencion_anios": plazo if plazo is not None and 0 < plazo <= 10 else 2.0, "equipos": []}
+           "plazo_intervencion_anios": plazo if plazo is not None and 0 < plazo <= 10 else 2.0,
+           "fecha_evaluacion": fecha_valida(data.get("fecha_evaluacion")) or "", "equipos": []}
     ids = set()
     for i, eq in enumerate(data["equipos"]):
         pref = f"Equipo #{i + 1}"

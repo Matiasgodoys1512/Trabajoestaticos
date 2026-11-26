@@ -28,12 +28,15 @@
       <button data-act="tab" data-tab="inicio">Inicio</button>
       <button data-act="tab" data-tab="planta">Planta</button>
       <button data-act="tab" data-tab="equipos">Equipos</button>
+      <button data-act="tab" data-tab="plan">Plan</button>
       <button data-act="tab" data-tab="rbi">Riesgo (RBI)</button>
       <button data-act="tab" data-tab="validacion">Validación</button>
       <button data-act="tab" data-tab="acerca">Acerca</button>
     </nav>
 
     <div class="acciones">
+      <label class="caja-fecha" id="caja-fecha"><span>Evaluado al</span>
+        <input type="date" id="fecha-eval" data-act="fecha_eval" aria-label="Fecha de evaluación del proyecto"></label>
       <span id="estado-guardado" class="estado-guardado" aria-live="polite" title="Los cambios se guardan automáticamente en este navegador"></span>
       <details class="menu">
         <summary aria-label="Opciones del proyecto">Proyecto</summary>

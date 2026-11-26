@@ -33,6 +33,7 @@
 - `index.html`, `css/` → interfaz. `.nojekyll` es obligatorio (GitHub Pages ignora `__init__.py` sin él).
 - E2E en navegador real: `.venv/Scripts/python tools/e2e.py` (Playwright + Chromium dentro de `.venv/ms-playwright`).
 - `data/` → caso demostrativo (JSON) + esquemas PNG.
+- Fecha de evaluación global: `data["fecha_evaluacion"]` (vacía = hoy). `ui.evaluar_todo` la fija en `ui._CTX`; usar `ui.hoy_eval()`, nunca `date.today()`, en cálculos de condición/RBI/plan.
 
 ## Alcance técnico
 - Tubería: ASME B31.3 / API 570, tramo recto. Recipiente: VIII-1 UG-27 + II-D / API 510. Tanque: API 650 / API 653, virolas (1 pie).

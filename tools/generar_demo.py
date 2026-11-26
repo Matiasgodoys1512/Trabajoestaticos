@@ -91,7 +91,7 @@ tanque = {
     ],
 }
 
-demo = {"version": 1, "proyecto": "Caso demostrativo MAN040-B", "plazo_intervencion_anios": 2.0,
+demo = {"version": 1, "proyecto": "Caso demostrativo MAN040-B", "plazo_intervencion_anios": 2.0, "fecha_evaluacion": "2026-11-26",
         "equipos": [tuberia, recipiente, tanque]}
 
 with open("data/demo.json", "w", encoding="utf-8") as f:

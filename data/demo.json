@@ -2,6 +2,7 @@
  "version": 1,
  "proyecto": "Caso demostrativo MAN040-B",
  "plazo_intervencion_anios": 2.0,
+ "fecha_evaluacion": "2026-11-26",
  "equipos": [
   {
    "id": "L-101",

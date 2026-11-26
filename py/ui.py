@@ -377,13 +377,13 @@ def grafico(eq, c, x):
     import matplotlib.dates as mdates
     import numpy as np
 
-    TINTA, TINTA2, MUTED, GRID, SERIE = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#1f5e45"
+    TINTA, TINTA2, MUTED, GRID, SERIE, FONDO = "#1d1d1f", "#6e6e73", "#86868b", "#ececf0", "#1f7a4d", "#ffffff"
     ms = sorted(c.get("mediciones", []), key=lambda m: m["fecha"])
     serie, _ = co.serie_comparable(ms)
     claves = {(s["fecha"], s["espesor_mm"]) for s in serie}
     fig, ax = plt.subplots(figsize=(7.6, 3.5), dpi=110)
-    fig.patch.set_facecolor("#fcfcfb")
-    ax.set_facecolor("#fcfcfb")
+    fig.patch.set_facecolor(FONDO)
+    ax.set_facecolor(FONDO)
     v = x["corrosion"]
     fechas = [date.fromisoformat(m["fecha"][:10]) for m in ms] or [date.today()]
     if x["proxima"]:
@@ -417,9 +417,9 @@ def grafico(eq, c, x):
         comp = [(a, b) for a, b, m in zip(fx, ty, ms) if (m["fecha"], m["espesor_mm"]) in claves]
         prev = [(a, b) for a, b, m in zip(fx, ty, ms) if (m["fecha"], m["espesor_mm"]) not in claves]
         if prev:
-            ax.plot(*zip(*prev), color=MUTED, lw=1.5, marker="o", ms=6, mec="#fcfcfb", mew=2, zorder=3)
+            ax.plot(*zip(*prev), color=MUTED, lw=1.5, marker="o", ms=6, mec=FONDO, mew=2, zorder=3)
         if comp:
-            ax.plot(*zip(*comp), color=SERIE, lw=2, marker="o", ms=8, mec="#fcfcfb", mew=2, zorder=4)
+            ax.plot(*zip(*comp), color=SERIE, lw=2, marker="o", ms=8, mec=FONDO, mew=2, zorder=4)
         for m, a, b in zip(ms, fx, ty):
             if m.get("evento"):
                 ax.annotate(EVENTOS[m["evento"]], (a, b), xytext=(6, 8), textcoords="offset points", fontsize=8, color=TINTA2)
@@ -428,11 +428,11 @@ def grafico(eq, c, x):
         ax.axvline(fp, color="#ec835a", lw=1.5, zorder=1)
         ax.annotate("Próx. insp.", (fp, 1.0), xycoords=("data", "axes fraction"), xytext=(-4, -2),
                     textcoords="offset points", fontsize=8, color=TINTA2, ha="right", va="top",
-                    bbox=dict(boxstyle="square,pad=0.15", fc="#fcfcfb", ec="none"))
+                    bbox=dict(boxstyle="square,pad=0.15", fc=FONDO, ec="none"))
     ax.axvline(date.today(), color=MUTED, lw=1, alpha=.6, zorder=1)
     ax.annotate("Hoy", (date.today(), 1.0), xycoords=("data", "axes fraction"), xytext=(-4, -14),
                 textcoords="offset points", fontsize=8, color=MUTED, ha="right", va="top",
-                bbox=dict(boxstyle="square,pad=0.15", fc="#fcfcfb", ec="none"))
+                bbox=dict(boxstyle="square,pad=0.15", fc=FONDO, ec="none"))
     ax.set_xlim(right=date.fromordinal(x_fin.toordinal() + 200))
     ax.set_ylabel("Espesor [mm]", fontsize=9, color=TINTA2)
     ax.set_title("Espesor vs tiempo", fontsize=10, color=TINTA, loc="left", fontweight="bold")
@@ -615,9 +615,9 @@ def vista_diseno(eq, res_eq):
             x = res_eq["cmls"][c["id"]]
         dis = es.espesor_diseno(eq, c)
         tn = (c or {}).get("t_nom_mm") or eq["t_nom_mm"]
-        items = [("Nominal", tn, "#52514e"), ("Diseño / compra", dis["valor"], "#2c7656"),
-                 ("Medido (último)", x["corrosion"]["t_actual"], "#1f5e45"), ("Alerta", x["t_alerta"], "#fab219"),
-                 ("Mínimo en servicio", x["t_min"], "#d03b3b"), ("Requerido por cálculo", dis["t_calc"], "#898781")]
+        items = [("Nominal", tn, "#aeaeb2"), ("Diseño / compra", dis["valor"], "#5fb38a"),
+                 ("Medido (último)", x["corrosion"]["t_actual"], "#1f7a4d"), ("Alerta", x["t_alerta"], "#fab219"),
+                 ("Mínimo en servicio", x["t_min"], "#d03b3b"), ("Requerido por cálculo", dis["t_calc"], "#c7c7cc")]
         tope = max(v for _, v, _ in items if v) * 1.05
         if fam == "tanque" and c:
             titulo = f'{esc(c["id"])} · {esc(c["componente"])}'
@@ -808,7 +808,7 @@ def vista_validacion():
         dif = abs(prog - esp) / abs(esp) * 100 if esp else 0
         ok = dif <= 0.5
         ok_n += ok
-        filas.append(f'<tr><td><b>{nom}</b><div class="muted">{fam} · {ref}</div></td><td class="muted">{ent}</td>'
+        filas.append(f'<tr><td><b>{esc(nom)}</b><div class="muted">{esc(fam)} · {esc(ref)}</div></td><td class="muted">{esc(ent)}</td>'
                      f'<td class="num">{f(esp, 4)}</td><td class="num">{f(prog, 4)}</td><td>{u}</td><td class="num">{"&lt; 0,001" if dif < 0.001 else f(dif, 3)} %</td>'
                      f'<td>{badge("normal", "OK") if ok else badge("bajo_minimo", "Revisar")}</td></tr>')
     h = ['<div class="cabecera"><h1>Validación</h1><span class="desc">Comparación con cálculos independientes</span></div>',
@@ -823,7 +823,7 @@ def vista_validacion():
             ("vencida", "CML-101-04", "Ejercicio de clase: próxima inspección en 2024"),
             ("insuficiente", "CML-101-03 · 301-03", "Spool reemplazado / CML nuevo con 1 lectura")]
     h.append('<div class="card"><h2>Casos de condición en la demo</h2><table>'
-             + "".join(f'<tr><td>{badge(k)}</td><td>{a}</td><td class="muted">{b}</td></tr>' for k, a, b in cond) + '</table></div>')
+             + "".join(f'<tr><td>{badge(k)}</td><td>{esc(a)}</td><td class="muted">{esc(b)}</td></tr>' for k, a, b in cond) + '</table></div>')
     return "".join(h)
 
 

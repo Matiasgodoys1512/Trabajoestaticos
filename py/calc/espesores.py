@@ -1,5 +1,6 @@
 """Espesores requeridos por familia. Unidades: mm, MPa, m. Cada función devuelve un dict trazable."""
 from .materiales import MATERIALES, esfuerzo_admisible
+from .normas import EDICION
 
 
 def _res(valor, ecuacion, ref, entradas, **extra):
@@ -73,7 +74,7 @@ def tanque_api653_tmin(D, H, G, YS, TS, E=1.0, virola=1):
         raise ValueError("API 653: H debe ser mayor que 0,3 m")
     t_calc = 4.9 * D * (H - 0.3) * G / (S * E)
     t = max(t_calc, 2.54)
-    return _res(t, "t_min = 4,9·D·(H − 0,3)·G / (S·E), ≥ 2,54 mm (0,1 in)", "API 653 §4.3.3.1 (edición a declarar)",
+    return _res(t, "t_min = 4,9·D·(H − 0,3)·G / (S·E), ≥ 2,54 mm (0,1 in)", f"{EDICION['API 653']} §4.3.3.1",
                 {"D [m]": D, "H [m]": H, "G": G, "Y [MPa]": YS, "T [MPa]": TS, "E": E, "virola": virola},
                 S=S, regla_S=regla, t_calc=t_calc)
 
@@ -95,7 +96,12 @@ def evaluar_equipo(eq, cml=None):
     if fam == "tuberia":
         S = esfuerzo_admisible(eq["material"], d["T_diseno_C"])
         r = tuberia_b313(d["P_diseno_MPa"], d["D_ext_mm"], S, d.get("E", mat["E"]), d.get("W", 1.0), d.get("Y", 0.4))
-        t_min = max(r["valor"], d.get("t_estructural_mm", 0.0))
+        t_est = d.get("t_estructural_mm", 0.0)
+        t_min = max(r["valor"], t_est)
+        r["tmin_calc"] = {"ecuacion": "t_min = máx(t_presión ; t_estructural)",
+                          "entradas": {"t_presión [mm] (B31.3 ec. 3a)": r["valor"], "t_estructural [mm]": t_est},
+                          "ref": f"{EDICION['API 570']} §7.1.1 · t_estructural según {EDICION['API 574']} (dato ingresado)",
+                          "gobierna": "estructural" if t_est > r["valor"] else "presión"}
     elif fam == "recipiente":
         S = esfuerzo_admisible(eq["material"], d["T_diseno_C"])
         r = recipiente_ug27(d["P_diseno_MPa"], d["D_int_mm"] / 2, S, d["E"])

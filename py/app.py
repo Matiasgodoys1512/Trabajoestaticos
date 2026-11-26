@@ -124,7 +124,7 @@ def render():
             html = ui.vista_validacion()
         else:
             html = ui.vista_acerca()
-        document.getElementById("contenido").innerHTML = html
+        document.getElementById("contenido").innerHTML = ui.subindices(html)
     except Exception as e:  # noqa: BLE001 — límite de error: nunca dejar la pantalla en blanco
         window.console.error(traceback.format_exc())
         document.getElementById("contenido").innerHTML = (

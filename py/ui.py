@@ -2,6 +2,7 @@
 import base64
 import html
 import io
+import re
 from datetime import date
 
 from calc import corrosion as co
@@ -9,6 +10,7 @@ from calc import espesores as es
 from calc import inspeccion as ins
 from calc import rbi
 from calc.materiales import MATERIALES, esfuerzo_admisible
+from calc.normas import EDICION
 
 FAMILIAS = {"tuberia": "Tubería de proceso", "recipiente": "Recipiente a presión", "tanque": "Tanque atmosférico"}
 CONDICION = {"normal": "Normal", "alerta": "Alerta", "bajo_minimo": "Bajo el mínimo",
@@ -55,6 +57,17 @@ def f(x, n=2, unidad=""):
     return f"{s} {unidad}".strip()
 
 
+def sci(x):
+    """Frecuencias y probabilidades: notación científica legible (6,29·10⁻³)."""
+    if x is None:
+        return "—"
+    if x == 0:
+        return "0"
+    m, e = f"{x:.2e}".split("e")
+    sup = str(int(e)).translate(str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"))
+    return f"{m.replace('.', ',')}·10{sup}"
+
+
 def badge(cond, texto=None):
     return (f'<span class="badge" style="--c:{COLOR.get(cond, "#888")}"><i>{ICONO.get(cond, "")}</i>'
             f'{texto or CONDICION.get(cond, cond)}</span>')
@@ -63,7 +76,7 @@ def badge(cond, texto=None):
 def vin(v):
     """Valor numérico para un atributo value= (sin '.0' sobrante), escapado."""
     if isinstance(v, float):
-        return esc(f"{v:.6g}")
+        return esc(f"{v:.10g}")
     return esc(v)
 
 
@@ -80,9 +93,55 @@ def opciones_material(familia, actual=None):
                    for k, v in MATERIALES.items() if v["familia"] == familia)
 
 
+_RE_SUB = re.compile(r"(?<![\w&#])([A-Za-zΔ]{1,3})_([A-Za-z0-9áéíóúñÁÉÍÓÚ]{1,12})(?!\w)")
+_RE_TAG = re.compile(r"(<[^>]*>)")
+
+
+def subindices(html_txt):
+    """Muestra 't_min' como t<sub>min</sub> en el texto visible (nunca dentro de etiquetas ni atributos)."""
+    partes = _RE_TAG.split(html_txt)
+    for i in range(0, len(partes), 2):
+        if "_" in partes[i]:
+            partes[i] = _RE_SUB.sub(r"\1<sub>\2</sub>", partes[i])
+    return "".join(partes)
+
+
+def prox_txt(x):
+    """Texto de la próxima inspección: 'Inmediata' si el CML está bajo el mínimo (H7)."""
+    return x.get("proxima_txt") or fecha_cl(x.get("proxima"))
+
+
+def calc_tmin(x):
+    """Tarjeta del espesor mínimo en servicio con la ecuación que realmente lo gobierna (H4)."""
+    tc = x["espesores"].get("tmin_calc")
+    if tc:
+        return calc("Mínimo en servicio (t_min)", f(x["t_min"], 3, "mm"), tc["ecuacion"], tc["entradas"], tc["ref"])
+    return calc_r("Mínimo en servicio (t_min)", x["espesores"], valor=x["t_min"])
+
+
+ORDEN_COND = {"bajo_minimo": 0, "error": 0, "vencida": 1, "alerta": 2, "insuficiente": 3, "normal": 4}
+
+
+def cml_gobernante(eq, res_eq):
+    """CML más crítico: peor condición, luego menor vida remanente, luego menor espesor (H3, H6)."""
+    cands = [(c, res_eq["cmls"][c["id"]]) for c in eq["cmls"] if c["id"] in res_eq["cmls"]]
+    if not cands:
+        return None, None
+    def clave(par):
+        c, x = par
+        return (ORDEN_COND.get(x["condicion"], 5), x["rl"] if x["rl"] is not None else 1e9,
+                x["corrosion"]["t_actual"] if x["corrosion"]["t_actual"] is not None else 1e9)
+    c, x = min(cands, key=clave)
+    motivo = {"bajo_minimo": "bajo el mínimo", "vencida": "inspección vencida", "alerta": "en alerta"}.get(
+        x["condicion"], "menor vida remanente")
+    return c, motivo
+
+
 def fecha_cl(iso):
     if not iso:
         return "—"
+    if not re.match(r"^\d{4}-\d{2}-\d{2}", str(iso)):
+        return esc(iso)
     a, m, d = iso[:10].split("-")
     return f"{d}-{m}-{a}"
 
@@ -206,7 +265,7 @@ def filas_panel(data, res, filtros):
             filas.append({"Equipo": e["tag"], "Familia": FAMILIAS[e["familia"]], "Área": e["ubicacion"]["area"],
                           "CML": c["id"], "Componente": c["componente"], "t_actual [mm]": v["t_actual"],
                           "t_min [mm]": x["t_min"], "t_alerta [mm]": x["t_alerta"], "CR [mm/año]": v["cr"],
-                          "RL [años]": x["rl"], "Próxima inspección": x["proxima"], "Condición": x["condicion"],
+                          "RL [años]": x["rl"], "Próxima inspección": x.get("proxima_txt") or x["proxima"], "Condición": x["condicion"],
                           "_eq": e["id"], "_cml": c["id"]})
     return filas
 
@@ -242,18 +301,17 @@ def panel(data, res, filtros):
 # ------------------------------------------------------------------ CML
 def calculos_cml(eq, c, x):
     v = x["corrosion"]
-    h = [calc_r("Espesor mínimo en servicio (t_min)", x["espesores"], valor=x["t_min"])]
-    if eq["familia"] == "tuberia" and eq["diseno"].get("t_estructural_mm"):
-        h.append(calc("t_min gobernante", f(x["t_min"], 3, "mm"), "t_min = máx(t presión; t estructural)",
-                      {"t presión [mm]": x["espesores"]["valor"], "t estructural [mm]": eq["diseno"]["t_estructural_mm"]},
-                      "t estructural: dato ingresado (API 574)"))
+    h = [calc_tmin(x)]
+    if x["espesores"].get("tmin_calc"):
+        h.append(calc("t presión (B31.3 ec. 3a)", f(x["espesores"]["valor"], 3, "mm"), x["espesores"]["ecuacion"],
+                      x["espesores"]["entradas"], x["espesores"]["ref"]))
     if v["cr_lp"] is not None:
         h.append(calc("CR largo plazo", f(v["cr_lp"], 3, "mm/año"), "CR_LP = (t_inicial − t_actual) / Δt",
-                      {"t_inicial": v["t_inicial"], "t_actual": v["t_actual"], "Δt [años]": v["dt_lp"]}, "API 570 / API 510 §7.1.1"))
+                      {"t_inicial": v["t_inicial"], "t_actual": v["t_actual"], "Δt [años]": v["dt_lp"]}, x["ref_corrosion"]))
         h.append(calc("CR corto plazo", f(v["cr_cp"], 3, "mm/año"), "CR_CP = (t_previo − t_actual) / Δt",
-                      {"t_previo": v["t_previo"], "t_actual": v["t_actual"], "Δt [años]": v["dt_cp"]}, "API 570 / API 510 §7.1.1"))
+                      {"t_previo": v["t_previo"], "t_actual": v["t_actual"], "Δt [años]": v["dt_cp"]}, x["ref_corrosion"]))
         h.append(calc("CR adoptada", f(v["cr"], 3, "mm/año"), "CR = máx(CR_LP; CR_CP)", None, v["criterio"] or ""))
-    h.append(calc("Vida remanente", f(x["rl"], 2, "años"), "RL = (t_actual − t_min) / CR", None, "API 570 / API 510 §7.1.1"))
+    h.append(calc("Vida remanente", f(x["rl"], 2, "años"), "RL = (t_actual − t_min) / CR", None, x["ref_corrosion"]))
     h.append(calc_r("Espesor de alerta", x["alerta"]))
     h.append(calc("Intervalo de inspección", f(x["intervalo"], 2, "años"), x["criterio"], None, x["ref_intervalo"]))
     return "".join(h)
@@ -269,7 +327,7 @@ def vista_cml(eq, c, x):
          stat("t alerta", f(x["t_alerta"]), "mm", "t_min + CR·2 años"),
          stat("Corrosión", f(v["cr"], 3), "mm/año", "adoptada"),
          stat("Vida remanente", f(x["rl"], 1), "años"),
-         stat("Próxima inspección", fecha_cl(x["proxima"]), "", f"intervalo {f(x['intervalo'], 1)} años", "destacado"),
+         stat("Próxima inspección", prox_txt(x), "", "evaluar FFS / reparar" if x.get("proxima_txt") else f"intervalo {f(x['intervalo'], 1)} años", "destacado"),
          '</div>']
     for p in v["problemas"]:
         h.append(f'<div class="error">✕ {esc(p)}</div>')
@@ -516,6 +574,16 @@ def escalera(items, tope):
     return "".join(h)
 
 
+TOLERANCIA = {
+    "tuberia": '<li><b>Tolerancia de fabricación</b>: tubo sin costura hasta −12,5 % del espesor nominal (ASTM A106/A53) '
+               '→ t_compra ≥ t_m / 0,875 (ASME B31.3 §304.1.1).</li>',
+    "recipiente": '<li><b>Tolerancia de plancha</b>: se acepta una diferencia menor que el menor valor entre 0,3 mm (0,01 in) '
+                  'y el 6 % del espesor de diseño; si la especificación permite más, se aumenta el espesor pedido (ASME VIII-1 UG-16(c)).</li>',
+    "tanque": '<li><b>Tolerancia de plancha</b>: se acepta una merma de hasta 0,3 mm (0,01 in) respecto del espesor de diseño '
+              'o mínimo permitido (API 650 §4.2.1.2.3).</li>',
+}
+
+
 def vista_diseno(eq, res_eq):
     fam = eq["familia"]
     d = eq["diseno"]
@@ -537,7 +605,8 @@ def vista_diseno(eq, res_eq):
     if res_eq["error"]:
         h.append(f'<div class="error">✕ {esc(res_eq["error"])}</div>')
         return "".join(h)
-    cmls = (eq["cmls"] if fam == "tanque" else eq["cmls"][:1]) or [None]
+    c_gob, motivo = cml_gobernante(eq, res_eq)
+    cmls = (eq["cmls"] if fam == "tanque" else [c_gob]) if c_gob else [None]
     for c in cmls:
         if c is None:  # equipo sin CML: espesores solo con datos de diseño
             esp = es.evaluar_equipo(eq)
@@ -550,7 +619,12 @@ def vista_diseno(eq, res_eq):
                  ("Medido (último)", x["corrosion"]["t_actual"], "#1f5e45"), ("Alerta", x["t_alerta"], "#fab219"),
                  ("Mínimo en servicio", x["t_min"], "#d03b3b"), ("Requerido por cálculo", dis["t_calc"], "#898781")]
         tope = max(v for _, v, _ in items if v) * 1.05
-        titulo = f'{esc(c["id"])} · {esc(c["componente"])}' if (fam == "tanque" and c) else "Espesores de evaluación [mm]"
+        if fam == "tanque" and c:
+            titulo = f'{esc(c["id"])} · {esc(c["componente"])}'
+        elif c:
+            titulo = f'Espesores de evaluación [mm] · CML gobernante: {esc(c["id"])} ({motivo})'
+        else:
+            titulo = "Espesores de evaluación [mm] · sin CML (solo datos de diseño)"
         if fam == "tanque":
             d_calc = calc("Requerido por cálculo", f(dis["t_calc"], 3, "mm"), "td − CA = 4,9·D·(H − 0,3)·G / Sd",
                           dis["entradas"], dis["ref"])
@@ -564,12 +638,22 @@ def vista_diseno(eq, res_eq):
         elif fam == "recipiente":
             d_calc += (f'<div class="muted">UG-27: t circunferencial = {f(x["espesores"]["t_circ"], 3)} mm · '
                        f't longitudinal = {f(x["espesores"]["t_long"], 3)} mm → gobierna {esc(x["espesores"]["gobierna"])}</div>')
-        detalle = (d_calc + calc_r("Diseño / compra", dis) + calc_r("Mínimo en servicio", x["espesores"], valor=x["t_min"])
+        detalle = (d_calc + calc_r("Diseño / compra", dis) + calc_tmin(x)
                    + (f'<div class="muted">{esc(x["espesores"]["regla_S"])} → S = {f(x["espesores"]["S"], 1)} MPa</div>' if fam == "tanque" else ""))
         alerta = f'<div class="error">✕ Nominal ({f(tn)} mm) menor que el de diseño ({f(dis["valor"])} mm).</div>' if dis["valor"] > tn else ""
-        h.append(f'<div class="card"><h2>{titulo}</h2>{alerta}{escalera(items, tope)}{plegable("Ver cálculos", detalle)}</div>')
+        tabla = ""
+        if fam != "tanque" and len(eq["cmls"]) > 1:
+            filas = "".join(
+                f'<tr><td>{esc(cc["id"])}{" ★" if cc is c else ""}</td><td>{esc(cc["componente"])}</td>'
+                f'<td class="num">{f(res_eq["cmls"][cc["id"]]["corrosion"]["t_actual"])}</td>'
+                f'<td class="num">{f(res_eq["cmls"][cc["id"]]["t_alerta"])}</td><td class="num">{f(res_eq["cmls"][cc["id"]]["t_min"])}</td>'
+                f'<td>{badge(res_eq["cmls"][cc["id"]]["condicion"])}</td></tr>' for cc in eq["cmls"])
+            tabla = plegable("Espesores por CML", '<table><tr><th>CML</th><th>Componente</th><th class="num">Medido</th>'
+                             '<th class="num">Alerta</th><th class="num">Mínimo</th><th>Condición</th></tr>' + filas + '</table>'
+                             '<div class="muted">★ = CML gobernante (peor condición, luego menor vida remanente).</div>', True)
+        h.append(f'<div class="card"><h2>{titulo}</h2>{alerta}{escalera(items, tope)}{tabla}{plegable("Ver cálculos", detalle)}</div>')
     notas = ('<ul><li><b>CA</b>: sobreespesor que se consume en servicio; no forma parte del t_min.</li>'
-             '<li><b>Tolerancia de fabricación</b>: tubo sin costura hasta −12,5 % del nominal → t_compra = t_m / 0,875.</li>'
+             + TOLERANCIA[fam] +
              '<li><b>Alerta</b>: t_min + CR·T_int, con T_int = 2 años (gestión de OT, repuestos y parada).</li></ul>')
     h.append(plegable("Definiciones de espesor", notas))
     return "".join(h)
@@ -606,7 +690,8 @@ def calcular_rbi(eq, res_eq):
     fms = rbi.f_ms(cfg.get("pscore", 50))
     rr = rbi.riesgo(con["Df"], cfg["C_A_m2"], cfg["C_E"], cfg.get("moneda", "USD"), fms=fms)
     rs = rbi.riesgo(sin["Df"], cfg["C_A_m2"], cfg["C_E"], cfg.get("moneda", "USD"), fms=fms)
-    return {"ent": ent, "con": con, "sin": sin, "fms": fms, "r": rr, "r_sin": rs, "f_eval": f_eval, "cml": c}
+    return {"ent": ent, "con": con, "sin": sin, "fms": fms, "r": rr, "r_sin": rs, "f_eval": f_eval, "cml": c,
+            "cr_adoptada": v["cr"]}
 
 
 def vista_rbi(data, res):
@@ -628,7 +713,7 @@ def vista_rbi(data, res):
     h = [f'<div class="cabecera"><h1>RBI · {esc(eq["tag"])}</h1><span class="desc">Adelgazamiento generalizado · API RP 580 / 581</span></div>',
          '<div class="stats">',
          stat("Factor de daño D_f", f(R["con"]["Df"], 1), "", "adimensional"),
-         stat("Frecuencia de falla P_f", f(r["Pf"]), "1/año", f"categoría POF {r['cat_pof']}"),
+         stat("Frecuencia de falla P_f", sci(r["Pf"]), "1/año", f"categoría POF {r['cat_pof']}"),
          stat("Riesgo de área R_A", f(r["R_A"], 4), "m²/año", f"C_A categoría {r['cat_area']}"),
          stat("Riesgo económico R_E", f(r["R_E"], 0), f"{esc(r['moneda'])}/año", f"C_E categoría {r['cat_fin']}"),
          f'<div class="stat estado" style="--c:{color_nivel}"><div class="l">Prioridad</div><div class="v">{r["nivel"]}</div>'
@@ -651,12 +736,13 @@ def vista_rbi(data, res):
              f'{matriz(r["cat_pof"], r["cat_fin"], "Económica → " + r["nivel_fin"])}</div>'
              f'<div class="info" style="margin-top:12px"><b>{r["nivel"]}:</b>&nbsp;{esc(r["accion"])}</div>'
              '<h3>Efecto de la inspección</h3><table><tr><th></th><th class="num">D_f</th><th class="num">P_f</th><th>Nivel</th></tr>'
-             f'<tr><td>Sin inspecciones</td><td class="num">{f(R["sin"]["Df"], 1)}</td><td class="num">{f(R["r_sin"]["Pf"])}</td><td>{R["r_sin"]["nivel"]}</td></tr>'
-             f'<tr><td>Con inspecciones registradas</td><td class="num">{f(R["con"]["Df"], 1)}</td><td class="num">{f(r["Pf"])}</td><td>{r["nivel"]}</td></tr></table>'
+             f'<tr><td>Sin inspecciones</td><td class="num">{f(R["sin"]["Df"], 1)}</td><td class="num">{sci(R["r_sin"]["Pf"])}</td><td>{R["r_sin"]["nivel"]}</td></tr>'
+             f'<tr><td>Con inspecciones registradas</td><td class="num">{f(R["con"]["Df"], 1)}</td><td class="num">{sci(r["Pf"])}</td><td>{r["nivel"]}</td></tr></table>'
              '<div class="muted" style="margin-top:6px">La inspección no recupera espesor: reduce la incertidumbre sobre la CR real (Bayes) y con ello D_f.</div>'
              f'</div><div class="card"><h2>Entradas</h2>{entradas}</div></div>')
     filas = [
-        ("CR largo plazo", "API 581 §4.5.2", f(e["cr"], 4, "mm/año")),
+        ("CR largo plazo (usada en D_f)", "API 581 §4.5.2 recomienda la CR de largo plazo", f(e["cr"], 4, "mm/año")),
+        ("CR adoptada en vida remanente", "máx(CR_LP; CR_CP), criterio conservador del panel", f(R["cr_adoptada"], 4, "mm/año")),
         ("age", f"{fecha_cl(eq['fecha_servicio'])} → {fecha_cl(R['f_eval'])}", f(e["edad"], 2, "años")),
         ("t_rdi", "espesor entregado", f(e["t_rdi"], 2, "mm")), ("t_min", "UG-27", f(e["t_min"], 3, "mm")),
         ("Art = CR·age / t_rdi", "ec. 2.12", f(p["Art"], 4)), ("FS = (YS + TS)/2 · E · 1,1", "ec. 2.13", f(p["FS"], 1, "MPa")),
@@ -665,7 +751,7 @@ def vista_rbi(data, res):
         ("Po₁ / Po₂ / Po₃", "ec. 2.16–2.17, Tabla 4.6", " / ".join(f(v, 4) for v in p["Po"])),
         ("β₁ / β₂ / β₃", "ec. 2.18 (DS 1, 2, 4)", " / ".join(f(v, 3) for v in p["beta"])),
         ("D_fB = ΣPo·Φ(−β) / 1,56·10⁻⁴", "ec. 2.19", f(p["DfB"], 2)), ("D_f = máx(D_fB / F_OM; 0,1)", "ec. 2.20", f(R["con"]["Df"], 2)),
-        ("P_f = gff · F_MS · D_f", f"gff 3,06·10⁻⁵ (Tabla 3.1) · F_MS {f(R['fms'], 3)} (ec. 2.10)", f(r["Pf"])),
+        ("P_f = gff · F_MS · D_f", f"gff 3,06·10⁻⁵ (Tabla 3.1) · F_MS {f(R['fms'], 3)} (ec. 2.10)", sci(r["Pf"]) + " 1/año"),
         ("R_A = P_f · C_A", "Parte 1 §4.1", f(r["R_A"], 5, "m²/año")), ("R_E = P_f · C_E", "Parte 1 §4.1", f(r["R_E"], 2, f"{r['moneda']}/año")),
     ]
     tabla = ('<table><tr><th>Paso</th><th>Origen</th><th class="num">Valor</th></tr>'
@@ -700,7 +786,7 @@ def casos_validacion():
          9.6723, es.recipiente_ug27(1.5, 750, 20 * KSI, 0.85)["valor"], "mm"),
         ("Recipiente", "t UG-27(c)(2) longitudinal", "P = 1,5 MPa, R = 750 mm, S = 20 ksi, E = 0,85", "ASME VIII-1 UG-27",
          4.7868, es.recipiente_ug27(1.5, 750, 20 * KSI, 0.85)["t_long"], "mm"),
-        ("Recipiente", "Intervalo API 510", "RL = 12 años → RL/2", "API 510 §7.1.1", 6.0, ins.intervalo("recipiente", 12)[0], "años"),
+        ("Recipiente", "Intervalo API 510", "RL = 12 años → RL/2", "API 510 §6.5.1.1", 6.0, ins.intervalo("recipiente", 12)[0], "años"),
         ("Tanque", "td API 650 virola 1", "D = 20 m, H = 12 m, G = 0,85, Sd = 137 MPa, CA = 1,5 mm", "API 650 §5.6.3.2",
          8.6139, es.tanque_api650_diseno(20, 12, 0.85, 137, 1.5)["valor"], "mm"),
         ("Tanque", "tt API 650 virola 1", "D = 20 m, H = 12 m, St = 154 MPa", "API 650 §5.6.3.2",
@@ -752,13 +838,21 @@ def vista_acerca():
            '<li>Reemplazo, reparación o cambio de punto reinicia la serie comparable.</li>'
            '<li>Intervalos: próxima medición de espesores. Tanques: solo manto.</li>'
            '<li>RBI: modelo académico, solo adelgazamiento generalizado en V-201.</li><li>Datos de la demo: ficticios.</li></ul>')
-    refs = ('<ul><li>ASME B31.3-2018: §304.1.2, Tablas A-1, A-1A, 302.3.5, 304.1.1.</li>'
-            '<li>ASME BPVC VIII-1 (2019) UG-27 · II-D (2019) Tabla 1A.</li>'
-            '<li>API 650 12ª ed. §5.6.3, Tabla 5.2a · API 653 §4.3.3, §6.3 · API 510 §7.1 · API 570 §6.3, §7.1.</li>'
-            '<li>API RP 580 3ª ed. (2016) · API RP 581 3ª ed. + Add. 2 (2020): Parte 1 §4; Parte 2 §3–4.</li>'
-            '<li>Apuntes MAN040-B, clases 01–06.</li></ul>')
+    refs = ('<ul>'
+            f'<li>{EDICION["B31.3"]}: §304.1.1, §304.1.2, Tablas A-1, A-1A, 302.3.5, 304.1.1.</li>'
+            f'<li>{EDICION["VIII-1"]}: UG-16(c), UG-27 · {EDICION["II-D"]}: Tabla 1A.</li>'
+            f'<li>{EDICION["API 650"]}: §4.2.1.2.3, §5.6.1.1, §5.6.3.2, Tabla 5.2a.</li>'
+            f'<li>{EDICION["API 510"]}: §6.5.1.1, §7.1.1.</li>'
+            f'<li>{EDICION["API 570"]}: §6.3.3, §7.1.1 · {EDICION["API 574"]}: espesor estructural mínimo.</li>'
+            f'<li>{EDICION["API 653"]}: §4.3.3.1, §6.3.3.2.</li>'
+            f'<li>API RP 580 3ª ed. (2016) · {EDICION["API 581"]}: Parte 1 §4; Parte 2 §3–4.</li>'
+            '<li>Apuntes MAN040-B, clases 01–06 (Prof. A. Badilla).</li></ul>'
+            '<div class="muted">API 510, 570, 574 y 653: no se dispuso del texto completo; los criterios provienen de los apuntes '
+            'del curso (clase 05) y deben verificarse contra la edición declarada.</div>')
     herr = ('<p>Python (PyScript/Pyodide, NumPy, pandas, Matplotlib), HTML/CSS, pytest, Git, GitHub Pages y VS Code. '
             'Asistente de IA en modo agente como apoyo en programación y revisión; los cálculos se verificaron con los casos de la pestaña Validación.</p>')
     return ('<div class="cabecera"><h1>Alcance y referencias</h1></div>'
             f'<div class="card"><h2>Alcance por familia</h2>{alcance}</div>'
+            + '<div class="info">Repositorio: <a href="https://github.com/Matiasgodoys1512/Trabajoestaticos" target="_blank" '
+              'rel="noopener noreferrer">github.com/Matiasgodoys1512/Trabajoestaticos</a></div>'
             + plegable("Supuestos y limitaciones", sup, True) + plegable("Referencias normativas", refs) + plegable("Herramientas", herr))

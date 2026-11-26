@@ -30,7 +30,7 @@ Prototipo académico (MAN040-B, Ingeniería en Mantenimiento Industrial) para ge
 2. **Equipo** → seleccionar V-201, ver ubicación técnica, esquema y CML-201-02.
 3. **Nueva medición** → agregar un espesor: cambian CR, vida remanente, condición y próxima fecha.
 4. **Diseño** → cambiar presión o temperatura: cambia el espesor requerido.
-5. **RBI** → cambiar C_A o C_E: cambia el riesgo y su categoría.
+5. **RBI** → cambiar C<sub>A</sub> o C<sub>E</sub>: cambia el riesgo y su categoría.
 6. **Exportar** → **Restablecer demo** → **Importar**: se recupera el caso. Mostrar **Validación**.
 
 ## Arquitectura

@@ -19,7 +19,7 @@
    "clase": 1,
    "material": "A106-B",
    "codigo_diseno": "ASME B31.3-2018",
-   "codigo_servicio": "API 570",
+   "codigo_servicio": "API 570 4ª ed. (2016)",
    "t_nom_mm": 8.18,
    "fecha_servicio": "2009-06-01",
    "diseno": {
@@ -190,7 +190,7 @@
    "clase": null,
    "material": "SA-516-70",
    "codigo_diseno": "ASME BPVC VIII-1 2019",
-   "codigo_servicio": "API 510",
+   "codigo_servicio": "API 510 10ª ed. (2014)",
    "t_nom_mm": 16.0,
    "fecha_servicio": "2016-05-01",
    "diseno": {
@@ -323,7 +323,7 @@
     }
    ],
    "rbi": {
-    "cml": "CML-201-02",
+    "cml": "CML-201-03",
     "confianza": "media",
     "inspecciones": {
      "A": 0,
@@ -356,8 +356,8 @@
    "circuito": "",
    "clase": null,
    "material": "A283-C",
-   "codigo_diseno": "API 650 12ª ed. 2013",
-   "codigo_servicio": "API 653",
+   "codigo_diseno": "API 650 12ª ed. (2013)",
+   "codigo_servicio": "API 653 5ª ed. (2014)",
    "t_nom_mm": 10.0,
    "fecha_servicio": "2015-09-01",
    "diseno": {

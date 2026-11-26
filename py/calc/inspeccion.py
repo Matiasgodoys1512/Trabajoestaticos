@@ -2,6 +2,7 @@
 from datetime import date, timedelta
 from .corrosion import velocidades, vida_remanente
 from .espesores import evaluar_equipo, espesor_alerta
+from .normas import REF_CORROSION, REF_INTERVALO
 
 MAX_API570 = {1: 5, 2: 10, 3: 10, 4: None}
 
@@ -11,28 +12,28 @@ def intervalo(familia, rl, clase=None, cr_conocida=True):
     rl = None con cr_conocida=True significa CR ≤ 0 (sin pérdida medible): aplica el máximo de la norma.
     cr_conocida=False: no hay serie comparable (≥ 2 mediciones)."""
     if familia == "recipiente":
-        ref = "API 510 §7.1.1 (edición a declarar)"
+        ref = REF_INTERVALO["recipiente"]
         if not cr_conocida:
             return None, "Sin CR: programar segunda medición para establecerla (juicio del inspector)", ref
         if rl is None:
             return 10.0, "CR ≤ 0: máximo 10 años", ref
         if rl < 4:
-            return min(rl, 2.0), "RL < 4 años: mín(RL; 2 años)", ref
+            return min(rl, 2.0), "RL < 4 años: mín(RL; 2 años), la norma permite hasta la RL completa", ref
         return (rl / 2, "RL/2 gobierna", ref) if rl / 2 < 10 else (10.0, "Máximo 10 años gobierna", ref)
     if familia == "tuberia":
-        ref = "API 570 §6.3.3, tabla de intervalos máximos"
+        ref = REF_INTERVALO["tuberia"]
         clase = clase or 2
         mx = MAX_API570.get(clase)
         if rl is None:
             motivo = "CR ≤ 0" if cr_conocida else "Sin CR"
             return (float(mx) if mx else None), f"{motivo}: máximo Clase {clase}", ref
         if rl < 4:
-            return min(rl, 2.0), "RL < 4 años: mín(RL; 2 años)", ref
+            return min(rl, 2.0), "RL < 4 años: mín(RL; 2 años), la norma permite hasta la RL completa", ref
         if mx is None or rl / 2 < mx:
             return rl / 2, "RL/2 gobierna", ref
         return float(mx), f"Máximo Clase {clase} ({mx} años) gobierna", ref
     if familia == "tanque":
-        ref = "API 653 §6.3.3.2 – UT externo del manto (edición a declarar)"
+        ref = REF_INTERVALO["tanque"]
         if not cr_conocida:
             return 5.0, "CR desconocida: máximo 5 años", ref
         if rl is None:
@@ -56,6 +57,9 @@ def evaluar_cml(eq, cml, hoy=None, plazo_intervencion=2.0):
 
     if v["t_actual"] is not None and v["t_actual"] < t_min:
         cond = "bajo_minimo"
+        # H7: no tiene sentido una fecha futura (ni pasada) de medición: acción inmediata
+        iv, prox = 0.0, None
+        criterio = "t < t_min: evaluación inmediata (FFS API 579-1, reparación o reemplazo)"
     elif v["t_actual"] is None or v["cr"] is None:
         cond = "insuficiente"
     elif prox and hoy > prox:
@@ -66,7 +70,9 @@ def evaluar_cml(eq, cml, hoy=None, plazo_intervencion=2.0):
         cond = "normal"
     return {"espesores": esp, "t_min": t_min, "t_alerta": alerta["valor"], "alerta": alerta,
             "corrosion": v, "rl": rl, "intervalo": iv, "criterio": criterio, "ref_intervalo": ref,
-            "proxima": prox.isoformat() if prox else None, "condicion": cond}
+            "proxima": prox.isoformat() if prox else None, "condicion": cond,
+            "proxima_txt": "Inmediata" if cond == "bajo_minimo" else None,
+            "ref_corrosion": REF_CORROSION[eq["familia"]]}
 
 
 PRIORIDAD = {"bajo_minimo": 0, "vencida": 1, "alerta": 2, "insuficiente": 3, "normal": 4}

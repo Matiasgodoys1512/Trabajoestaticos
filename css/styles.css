@@ -151,7 +151,9 @@ details > .cuerpo { padding: 4px 14px 12px; }
 /* ---------- formularios ---------- */
 form.f { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 12px; align-items: end; }
 form.f.col { grid-template-columns: 1fr 1fr; }
-form.f label { display: flex; flex-direction: column; font-size: 12px; color: var(--tinta2); gap: 3px; }
+form.f label { display: block; font-size: 12px; color: var(--tinta2); }
+form.f label > input, form.f label > select, form.f label > textarea { display: block; width: 100%; margin-top: 3px; }
+sub { font-size: .72em; line-height: 0; }
 form.f .ancho { grid-column: 1 / -1; }
 .acciones-form { display: flex; gap: 8px; margin-top: 12px; }
 

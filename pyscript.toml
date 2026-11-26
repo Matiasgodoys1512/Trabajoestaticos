@@ -8,5 +8,6 @@ packages = ["numpy", "matplotlib", "pandas"]
 "py/calc/corrosion.py" = "calc/corrosion.py"
 "py/calc/inspeccion.py" = "calc/inspeccion.py"
 "py/calc/rbi.py" = "calc/rbi.py"
+"py/calc/normas.py" = "calc/normas.py"
 "py/ui.py" = "ui.py"
 "py/proyecto.py" = "proyecto.py"

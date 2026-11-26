@@ -144,6 +144,34 @@ def recorrer(url, salida):
             cap("09_importado")
         paso("Exportar, restablecer e importar proyecto", exportar_importar)
 
+        def adjuntos_usuario():
+            pdf = salida / "informe_prueba.pdf"
+            pdf.write_bytes(b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n")
+            pg.locator(".eq-item", has_text="V-201").click()
+            pg.locator('#tabs [data-tab="equipo"]').click()
+            pg.set_input_files('input[data-act="subir_img"]', str(RAIZ / "data" / "img" / "tanque_TK301.png"))
+            pg.wait_for_timeout(1200)
+            pg.set_input_files('input[data-act="subir_pdf"]', str(pdf))
+            pg.wait_for_timeout(1200)
+            with pg.expect_download() as d:
+                pg.locator('[data-act="exportar"]').click()
+            ruta = salida / "proyecto_con_adjuntos.json"
+            d.value.save_as(ruta)
+            pg.locator('[data-act="restablecer"]').click()
+            pg.wait_for_timeout(1500)
+            pg.locator(".eq-item", has_text="V-201").click()
+            pg.locator('#tabs [data-tab="equipo"]').click()
+            assert pg.locator("text=informe_prueba.pdf").count() == 0, "el PDF no debía estar tras restablecer"
+            pg.set_input_files('input[data-act="importar"]', str(ruta))
+            pg.wait_for_timeout(1500)
+            pg.locator(".eq-item", has_text="V-201").click()
+            pg.locator('#tabs [data-tab="equipo"]').click()
+            assert pg.locator("text=informe_prueba.pdf").count() == 1, "el PDF no se recuperó al importar"
+            src = pg.locator(".esquema img").get_attribute("src")
+            assert src.startswith("data:image/png;base64,"), "el esquema subido no se recuperó"
+            cap("09b_adjuntos_recuperados")
+        paso("Adjuntos del usuario (PNG y PDF) se conservan al exportar/importar", adjuntos_usuario)
+
         def persistencia():
             pg.reload()
             pg.wait_for_selector("#app:not([hidden])", timeout=180_000)

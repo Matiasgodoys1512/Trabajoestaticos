@@ -235,6 +235,100 @@ def filtrar(data, res, filtros):
     return out
 
 
+# ------------------------------------------------------------------ plano de planta
+BOCETO = {
+    "tuberia": '<svg viewBox="0 0 140 100" aria-hidden="true">'
+               '<path d="M8 66H92V30H132" fill="none" stroke="currentColor" stroke-width="12" stroke-linejoin="round"/>'
+               '<path d="M8 66H92V30H132" fill="none" stroke="var(--sup)" stroke-width="8" stroke-linejoin="round"/>'
+               '<path d="M40 58v16M66 58v16M106 22v16" stroke="currentColor" stroke-width="3"/>'
+               '<path d="M30 74v16M74 74v16M22 90h16M66 90h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    "recipiente": '<svg viewBox="0 0 140 100" aria-hidden="true">'
+                  '<path d="M52 24Q52 8 70 8T88 24V72Q88 88 70 88T52 72Z" fill="var(--sup)" stroke="currentColor" stroke-width="2.5"/>'
+                  '<path d="M52 42h36M52 58h36" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3"/>'
+                  '<path d="M70 8V1M28 34h24M88 66h22M58 85l-4 13M82 85l4 13M48 98h12M80 98h12" stroke="currentColor" '
+                  'stroke-width="2.5" stroke-linecap="round"/></svg>',
+    "tanque": '<svg viewBox="0 0 140 100" aria-hidden="true">'
+              '<path d="M18 36L70 16L122 36V90H18Z" fill="var(--sup)" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>'
+              '<path d="M18 36h104M18 54h104M18 72h104" stroke="currentColor" stroke-width="1"/>'
+              '<path d="M28 90L60 36" stroke="currentColor" stroke-width="2"/><path d="M34 90L66 36" stroke="currentColor" stroke-width="1" '
+              'stroke-dasharray="2 4"/><path d="M6 92h128" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+}
+AVISO = ("bajo_minimo", "vencida", "alerta")
+TRIANGULO = ('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3L2 21h20Z" fill="currentColor"/>'
+             '<path d="M12 10v5M12 18v.5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>')
+
+
+def ficha_plano(e, r):
+    """Pop-up de un equipo en el plano: condición de cada CML y accesos directos."""
+    orden = {"bajo_minimo": 0, "vencida": 1, "alerta": 2, "insuficiente": 3, "normal": 4}
+    cmls = sorted(e["cmls"], key=lambda c: orden.get(r["cmls"].get(c["id"], {}).get("condicion"), 5))
+    filas = []
+    for c in cmls:
+        x = r["cmls"].get(c["id"])
+        if not x:
+            continue
+        cond = x["condicion"]
+        filas.append(f'<li><button class="pl-cml" data-act="sel_eq" data-id="{esc(e["id"])}" data-cml="{esc(c["id"])}">'
+                     f'<span class="punto" style="background:{COLOR[cond]}"></span><span class="pl-cml-id"><b>{esc(c["id"])}</b>'
+                     f'<small>{esc(c["componente"])}</small></span><span class="pl-cml-v">{f(x["corrosion"]["t_actual"])} / '
+                     f'{f(x["t_min"])} mm<small>{CONDICION[cond]}</small></span></button></li>')
+    vacio = '' if filas else '<li class="muted">Sin CML registrados.</li>'
+    return (f'<div class="pl-pop" role="dialog" aria-label="Detalle de {esc(e["tag"])}">'
+            f'<div class="pl-pop-cab"><b>{esc(e["tag"])}</b>{badge(r["cond"])}</div>'
+            f'<div class="muted pl-pop-desc">{FAMILIAS[e["familia"]]} · {esc(e["descripcion"])}</div>'
+            f'<div class="pl-pop-tit"><span>CML</span><span>t actual / t mín</span></div><ul>{"".join(filas)}{vacio}</ul>'
+            f'<button class="pl-abrir" data-act="sel_eq" data-id="{esc(e["id"])}">Abrir equipo ›</button></div>')
+
+
+def plano(data, res, filtros):
+    """Plano esquemático (sin escala) de la planta: áreas › sistemas › equipos, con avisos por condición."""
+    visibles = {e["id"] for e in filtrar(data, res, filtros)}
+    arbol = {}
+    for e in data["equipos"]:
+        u = e["ubicacion"]
+        arbol.setdefault(u["area"], {}).setdefault(u["sistema"], []).append(e)
+    areas = []
+    for area in sorted(arbol):
+        sistemas, n_av = [], 0
+        for sist, eqs in arbol[area].items():
+            tiles = []
+            for e in eqs:
+                r = res[e["id"]]
+                cond = r["cond"]
+                malos = [x["condicion"] for x in r["cmls"].values() if x["condicion"] in AVISO]
+                n_av += len(malos)
+                aviso = ""
+                if malos:
+                    peor = min(malos, key=AVISO.index)
+                    det = ", ".join(f"{CONDICION[k].lower()} ({malos.count(k)})" for k in AVISO if k in malos)
+                    aviso = (f'<span class="pl-aviso" style="--c:{COLOR[peor]}" title="{len(malos)} CML requieren atención: {det}">'
+                             f'{TRIANGULO}{len(malos)}</span>')
+                puntos = "".join(f'<span class="punto" style="background:{COLOR[x["condicion"]]}" '
+                                 f'title="{esc(cid)} · {CONDICION[x["condicion"]]}"></span>' for cid, x in r["cmls"].items())
+                aria = f'{e["tag"]}, {FAMILIAS[e["familia"]]}, {CONDICION[cond]}' + (f', {len(malos)} avisos' if malos else '')
+                clases = "pl-eq" + (" con-aviso" if malos else "") + ("" if e["id"] in visibles else " atenuado")
+                tiles.append(f'<div class="{clases}" tabindex="0" data-eq="{esc(e["id"])}" style="--c:{COLOR[cond]}" '
+                             f'aria-label="{esc(aria)}" aria-haspopup="dialog">'
+                             f'{aviso}<div class="pl-boceto">{BOCETO[e["familia"]]}</div>'
+                             f'<div class="pl-tag"><span class="punto" style="background:{COLOR[cond]}"></span>{esc(e["tag"])}</div>'
+                             f'<div class="pl-puntos">{puntos}</div>{ficha_plano(e, r)}</div>')
+            sistemas.append(f'<div class="pl-sist"><span class="pl-sist-nom">{esc(sist)}</span>'
+                            f'<div class="pl-eqs">{"".join(tiles)}</div></div>')
+        n_eq = sum(len(v) for v in arbol[area].values())
+        av = f'<span class="pl-area-av">{TRIANGULO}{n_av}</span>' if n_av else ''
+        sel = " sel" if filtros.get("area") == area else ""
+        areas.append(f'<section class="pl-area{sel}"><button class="pl-area-cab" data-act="ir_area" data-area="{esc(area)}" '
+                     f'title="Filtrar la tabla por esta área"><span>{esc(area)}<small>{n_eq} equipo(s)</small></span>{av}</button>'
+                     f'{"".join(sistemas)}</section>')
+    leyenda = "".join(f'<span><span class="punto" style="background:{COLOR[k]}"></span>{CONDICION[k]}</span>'
+                      for k in ("normal", "alerta", "vencida", "bajo_minimo", "insuficiente"))
+    return ('<div class="card"><div class="card-cab"><h2>Plano de planta</h2>'
+            '<span class="muted">Esquema sin escala · selecciona un equipo para ver sus CML</span></div>'
+            f'<div class="plano"><span class="pl-norte" aria-hidden="true">N<br>↑</span>{"".join(areas)}</div>'
+            f'<div class="pl-leyenda">{leyenda}<span><span class="pl-aviso mini" style="--c:{COLOR["alerta"]}">{TRIANGULO}</span>'
+            'Aviso: CML en alerta, vencido o bajo el mínimo</span></div></div>')
+
+
 # ------------------------------------------------------------------ panel
 def filas_panel(data, res, filtros):
     filas = []
@@ -279,14 +373,15 @@ def panel(data, res, filtros):
              + ('<button class="chico secundario" data-act="limpiar_filtros">Limpiar filtros</button>' if activos else '')
              + '</div>')
     h = ['<div class="cabecera"><h1>Estado de la planta</h1>'
-         '<span class="desc">Todos los puntos de monitoreo, del más grave al menos grave</span></div>',
+         '<span class="desc">Plano por áreas y puntos de monitoreo, del más grave al menos grave</span></div>',
          '<div class="stats">', stat("Equipos", n_eq, sub=f"{len(filas)} CML" + (" (filtrado)" if activos else ""), clase="destacado")]
     for k, n in cuenta.items():
         h.append(f'<div class="stat estado" style="--c:{COLOR[k]}"><div class="l">{CONDICION[k]}</div>'
                  f'<div class="v"><span style="color:{COLOR[k]}">{ICONO[k]}</span>{n}</div></div>')
-    h.append(f'</div><div class="card"><div class="card-cab"><h2>Puntos de monitoreo (CML)</h2>{barra}</div>'
-             '<table><tr><th>Equipo</th><th>CML</th><th>Componente</th><th class="num">t actual</th>'
-             '<th class="num">t mín</th><th class="num">CR mm/año</th><th class="num">RL años</th><th>Próxima</th><th>Condición</th></tr>')
+    h.append('</div>' + plano(data, res, filtros))
+    h.append(f'<div class="card"><div class="card-cab"><h2>Puntos de monitoreo (CML)</h2>{barra}</div>'
+             '<table><tr><th>Equipo</th><th>CML</th><th>Componente</th><th class="num">t actual [mm]</th>'
+             '<th class="num">t mín [mm]</th><th class="num">CR [mm/año]</th><th class="num">RL [años]</th><th>Próxima</th><th>Condición</th></tr>')
     for fl in filas:
         h.append(f'<tr class="click" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(fl["_eq"])}" data-cml="{esc(fl["_cml"] or "")}">'
                  f'<td><b>{esc(fl["Equipo"])}</b><div class="muted">{esc(fl["Familia"])}</div></td><td>{esc(fl["CML"])}</td>'
@@ -319,6 +414,60 @@ def calculos_cml(eq, c, x):
     return "".join(h)
 
 
+def _mas_anios(iso, anios):
+    """Fecha ISO + años (float) → fecha ISO; None si no aplica."""
+    if not iso or anios is None or anios < 0 or anios > 300:
+        return None
+    return date.fromordinal(date.fromisoformat(iso).toordinal() + round(anios * 365.25)).isoformat()
+
+
+def ficha_cml(eq, c, x):
+    """Especificaciones del CML: identificación, historial, degradación y proyección."""
+    v = x["corrosion"]
+    ms = sorted(c.get("mediciones", []), key=lambda m: m["fecha"])
+    t_act, t_min, t_al, cr = v["t_actual"], x["t_min"], x["t_alerta"], v["cr"]
+    t_ini = v["t_inicial"] if v["t_inicial"] is not None else (ms[0]["espesor_mm"] if ms else None)
+    ident = [("Componente", esc(c["componente"])), ("Ubicación", esc(c["ubicacion"])),
+             ("t nominal", f(c.get("t_nom_mm") or eq["t_nom_mm"], 2, "mm"))]
+    dl = c.get("diseno_local") or {}
+    if eq["familia"] == "tanque":
+        ident.append(("Virola · nivel H", f'N° {esc(dl.get("virola", "—"))} · {f(dl.get("H_m"), 2, "m")}'))
+    ident.append(("Posición en esquema", f'x {f(float(pct(c["x"])), 0)} % · y {f(float(pct(c["y"])), 0)} %'))
+    hist = [("Mediciones", f'{len(ms)} registradas · {v["n"]} comparables'),
+            ("Primera / última", f'{fecha_cl(ms[0]["fecha"]) if ms else "—"} → {fecha_cl(ms[-1]["fecha"]) if ms else "—"}'),
+            ("Técnica (última)", esc(ms[-1].get("tecnica")) if ms else "—")]
+    deg = []
+    if t_ini is not None and t_act is not None:
+        perdida = t_ini - t_act
+        deg.append(("Pérdida acumulada", f'{f(perdida)} mm ({f(perdida / t_ini * 100, 1)} % de t inicial)' if t_ini else "—"))
+        if t_ini > t_min:
+            uso = min(max(perdida / (t_ini - t_min) * 100, 0), 999)
+            color = COLOR["bajo_minimo"] if uso >= 100 else COLOR["alerta"] if uso >= 70 else COLOR["normal"]
+            deg.append(("Margen consumido",
+                        f'<span class="medidor" style="--p:{min(uso, 100):.0f}%;--c:{color}" title="Pérdida / (t inicial − t mín)"><i></i></span>'
+                        f'{f(uso, 0)} %'))
+    if t_act is not None:
+        deg.append(("Margen sobre t mín", f'<b class="{"fail" if t_act < t_min else ""}">{f(t_act - t_min)} mm</b>'))
+    deg.append(("CR largo / corto plazo", f'{f(v["cr_lp"], 3)} / {f(v["cr_cp"], 3)} mm/año'))
+    deg.append(("CR adoptada", f'{f(cr, 3)} mm/año' + (f' <span class="muted">· {esc(v["criterio"])}</span>' if v["criterio"] else "")))
+    proy = []
+    if t_act is not None and cr and cr > 0:
+        f_al = "ya alcanzado" if t_act <= t_al else fecha_cl(_mas_anios(v["fecha_actual"], (t_act - t_al) / cr))
+        f_min = "ya alcanzado" if t_act < t_min else fecha_cl(_mas_anios(v["fecha_actual"], x["rl"]))
+        proy += [("Llega a t alerta", f_al), ("Llega a t mín (fin de vida)", f_min)]
+    else:
+        proy.append(("Proyección", '<span class="muted">requiere CR &gt; 0 (≥ 2 mediciones comparables)</span>'))
+    proy.append(("Intervalo", f'{f(x["intervalo"], 1, "años")} <span class="muted">· {esc(x["ref_intervalo"])}</span>'
+                 if x["intervalo"] is not None else "—"))
+    proy.append(("Próxima inspección", f'<b>{prox_txt(x)}</b>'))
+
+    def bloque(titulo, filas):
+        return (f'<div><h3>{titulo}</h3><dl class="kv-col">'
+                + "".join(f"<dt>{a}</dt><dd>{b}</dd>" for a, b in filas) + "</dl></div>")
+    return (f'<h2>Especificaciones de {esc(c["id"])}</h2><div class="ficha-grid">' + bloque("Identificación", ident)
+            + bloque("Historial", hist) + bloque("Degradación", deg) + bloque("Proyección", proy) + '</div>')
+
+
 def vista_cml(eq, c, x):
     v = x["corrosion"]
     h = [f'<div class="cabecera" style="margin-top:6px"><h2 style="margin:0">{esc(c["id"])}</h2>'
@@ -337,17 +486,20 @@ def vista_cml(eq, c, x):
         h.append('<div class="info">Alcance API 653: solo espesores del manto. Fondo, techo e inspección interna: datos pendientes.</div>')
     h.append(f'<div class="grid-cml"><div class="card grafico">{grafico(eq, c, x)}</div>'
              f'<div class="card"><h2>Nueva medición</h2>{form_medicion(c)}</div></div>')
-    h.append(plegable("Ver cálculos (ecuaciones, entradas y referencias)", calculos_cml(eq, c, x)))
+    h.append(f'<div class="card ficha-cml">{ficha_cml(eq, c, x)}</div>')
     filas = []
     for i, m in sorted(enumerate(c.get("mediciones", [])), key=lambda t: t[1]["fecha"], reverse=True):
         orig = f' <span class="muted">({m["espesor_mm"] / IN:.3f} in)</span>' if m.get("unidad") == "in" else ""
         ev = badge("bajo_minimo", EVENTOS[m["evento"]]) if m.get("evento") else ""
         filas.append(f'<tr><td>{fecha_cl(m["fecha"])}</td><td class="num"><b>{f(m["espesor_mm"], 2)}</b>{orig}</td>'
                      f'<td>{esc(m.get("tecnica"))}</td><td>{ev} {esc(m.get("observaciones"))}</td>'
-                     f'<td class="num"><button class="chico peligro" data-act="del_med" data-i="{i}" title="Eliminar">✕</button></td></tr>')
-    tabla = ('<table><tr><th>Fecha</th><th class="num">Espesor mm</th><th>Técnica</th><th>Observaciones</th><th></th></tr>'
-             + "".join(filas) + '</table>')
-    h.append(plegable(f"Historial de mediciones ({len(filas)})", tabla, abierto=True))
+                     f'<td class="num"><button class="chico peligro" data-act="del_med" data-i="{i}" title="Eliminar medición" '
+                     f'aria-label="Eliminar medición del {fecha_cl(m["fecha"])}">✕</button></td></tr>')
+    tabla = ('<table><tr><th>Fecha</th><th class="num">Espesor [mm]</th><th>Técnica</th><th>Observaciones</th><th></th></tr>'
+             + ("".join(filas) or '<tr><td colspan="5" class="muted">Sin mediciones. Registra la primera en «Nueva medición».</td></tr>')
+             + '</table>')
+    h.append(f'<div class="card"><h2>Historial de mediciones ({len(filas)})</h2>{tabla}</div>')
+    h.append(plegable("Ver cálculos (ecuaciones, entradas y referencias)", calculos_cml(eq, c, x)))
     pos = ('<form class="f" id="form_xy">'
            f'<label>x [%]<input type="number" step="any" name="x" value="{pct(c["x"])}" min="0" max="100"></label>'
            f'<label>y [%]<input type="number" step="any" name="y" value="{pct(c["y"])}" min="0" max="100"></label>'
@@ -398,15 +550,15 @@ def grafico(eq, c, x):
         ax.plot([1.0], [y], marker="s", ms=5, color=color, transform=ax.get_yaxis_transform(), clip_on=False)
 
     ax.axhline(x["t_min"], color="#d03b3b", lw=2, zorder=1)
-    etiqueta(x["t_min"], f"t mín {x['t_min']:.2f}", "#d03b3b")
+    etiqueta(x["t_min"], f"t mín {x['t_min']:.2f} mm", "#d03b3b")
     if abs(x["t_alerta"] - x["t_min"]) > 0.05:
         ax.axhline(x["t_alerta"], color="#fab219", lw=2, ls=(0, (5, 3)), zorder=1)
     if abs(x["t_alerta"] - x["t_min"]) > 0.15:
-        etiqueta(x["t_alerta"], f"t alerta {x['t_alerta']:.2f}", "#fab219")
+        etiqueta(x["t_alerta"], f"t alerta {x['t_alerta']:.2f} mm", "#fab219")
     tn = c.get("t_nom_mm")
     if tn:
         ax.axhline(tn, color=MUTED, lw=1, ls=(0, (1, 2)), zorder=1)
-        etiqueta(tn, f"t nom {tn:.2f}", MUTED)
+        etiqueta(tn, f"t nom {tn:.2f} mm", MUTED)
     if v["cr"] and v["fecha_actual"] and x["rl"]:
         f0 = date.fromisoformat(v["fecha_actual"])
         anios = np.linspace(0, x["rl"], 20)
@@ -669,14 +821,25 @@ def form_equipo(eq=None):
 
 # ------------------------------------------------------------------ diseño
 def escalera(items, tope):
-    h = ['<div class="escalera">']
-    for nom, val, color in items:
+    """Barras horizontales a escala (0 → tope) con el espesor en mm. items: (nombre, valor, color[, grupo])."""
+    paso = next(p for p in (0.5, 1, 2, 2.5, 5, 10, 20, 50) if tope / p <= 6)
+    marcas = [i * paso for i in range(int(tope // paso) + 1)]
+    eje = "".join(f'<span style="left:{m / tope * 100:.2f}%">{f(m, 0) if paso >= 1 else f(m, 1)}</span>' for m in marcas)
+    h = ['<div class="escalera" role="img" aria-label="Espesores en milímetros">']
+    grupo_prev = None
+    for it in items:
+        nom, val, color = it[:3]
+        grupo = it[3] if len(it) > 3 else None
         if val is None:
             continue
+        if grupo and grupo != grupo_prev:
+            h.append(f'<div class="esc-grupo">{grupo}</div>')
+            grupo_prev = grupo
         ancho = max(min(val / tope * 100, 100), 1)
         h.append(f'<div class="esc-fila"><span>{nom}</span><div><div class="barra" style="width:{ancho:.1f}%;--c:{color}"></div></div>'
-                 f'<span class="val">{f(val)}</span></div>')
-    h.append('</div>')
+                 f'<span class="val">{f(val)} <small>mm</small></span></div>')
+    h.append(f'<div class="esc-fila esc-eje" aria-hidden="true"><span></span><div class="eje">{eje}</div>'
+             '<span class="val"><small>t [mm]</small></span></div></div>')
     return "".join(h)
 
 
@@ -722,16 +885,17 @@ def vista_diseno(eq, res_eq, cabecera=True):
             x = res_eq["cmls"][c["id"]]
         dis = es.espesor_diseno(eq, c)
         tn = (c or {}).get("t_nom_mm") or eq["t_nom_mm"]
-        items = [("Nominal", tn, "#aeaeb2"), ("Diseño / compra", dis["valor"], "#5fb38a"),
-                 ("Medido (último)", x["corrosion"]["t_actual"], "#1f7a4d"), ("Alerta", x["t_alerta"], "#fab219"),
-                 ("Mínimo en servicio", x["t_min"], "#d03b3b"), ("Requerido por cálculo", dis["t_calc"], "#c7c7cc")]
-        tope = max(v for _, v, _ in items if v) * 1.05
+        items = [("Nominal", tn, "#aeaeb2", "Diseño y fabricación"), ("Diseño / compra", dis["valor"], "#5fb38a", "Diseño y fabricación"),
+                 ("Requerido por cálculo", dis["t_calc"], "#9ccfb3", "Diseño y fabricación"),
+                 ("Medido (último)", x["corrosion"]["t_actual"], "#1f7a4d", "En servicio"),
+                 ("Alerta", x["t_alerta"], "#fab219", "En servicio"), ("Mínimo en servicio", x["t_min"], "#d03b3b", "En servicio")]
+        tope = max(it[1] for it in items if it[1]) * 1.05
         if fam == "tanque" and c:
-            titulo = f'{esc(c["id"])} · {esc(c["componente"])}'
+            titulo = f'Espesores de pared [mm] · {esc(c["id"])} · {esc(c["componente"])}'
         elif c:
-            titulo = f'Espesores de evaluación [mm] · CML gobernante: {esc(c["id"])} ({motivo})'
+            titulo = f'Espesores de pared [mm] · CML gobernante: {esc(c["id"])} ({motivo})'
         else:
-            titulo = "Espesores de evaluación [mm] · sin CML (solo datos de diseño)"
+            titulo = "Espesores de pared [mm] · sin CML (solo datos de diseño)"
         if fam == "tanque":
             d_calc = calc("Requerido por cálculo", f(dis["t_calc"], 3, "mm"), "td − CA = 4,9·D·(H − 0,3)·G / Sd",
                           dis["entradas"], dis["ref"])
@@ -755,10 +919,15 @@ def vista_diseno(eq, res_eq, cabecera=True):
                 f'<td class="num">{f(res_eq["cmls"][cc["id"]]["corrosion"]["t_actual"])}</td>'
                 f'<td class="num">{f(res_eq["cmls"][cc["id"]]["t_alerta"])}</td><td class="num">{f(res_eq["cmls"][cc["id"]]["t_min"])}</td>'
                 f'<td>{badge(res_eq["cmls"][cc["id"]]["condicion"])}</td></tr>' for cc in eq["cmls"])
-            tabla = plegable("Espesores por CML", '<table><tr><th>CML</th><th>Componente</th><th class="num">Medido</th>'
-                             '<th class="num">Alerta</th><th class="num">Mínimo</th><th>Condición</th></tr>' + filas + '</table>'
+            tabla = plegable("Espesores por CML", '<table><tr><th>CML</th><th>Componente</th><th class="num">Medido [mm]</th>'
+                             '<th class="num">Alerta [mm]</th><th class="num">Mínimo [mm]</th><th>Condición</th></tr>' + filas + '</table>'
                              '<div class="muted">★ = CML gobernante (peor condición, luego menor vida remanente).</div>', True)
-        h.append(f'<div class="card"><h2>{titulo}</h2>{alerta}{escalera(items, tope)}{tabla}{plegable("Ver cálculos", detalle)}</div>')
+        margen = ""
+        if x["corrosion"]["t_actual"] is not None:
+            mg = x["corrosion"]["t_actual"] - x["t_min"]
+            margen = (f'<div class="muted esc-nota">Margen sobre el mínimo: <b class="{"fail" if mg < 0 else ""}">{f(mg)} mm</b> · '
+                      'barras a escala desde 0 mm. Todos los valores son espesores de pared.</div>')
+        h.append(f'<div class="card"><h2>{titulo}</h2>{alerta}{escalera(items, tope)}{margen}{tabla}{plegable("Ver cálculos", detalle)}</div>')
     notas = ('<ul><li><b>CA</b>: sobreespesor que se consume en servicio; no forma parte del t_min.</li>'
              + TOLERANCIA[fam] +
              '<li><b>Alerta</b>: t_min + CR·T_int, con T_int = 2 años (gestión de OT, repuestos y parada).</li></ul>')

@@ -103,11 +103,36 @@ def recorrer(url, salida):
             cap("01_panel")
         paso("Planta: tabla de CML con filtros junto a la tabla", panel)
 
+        def plano():
+            ir("planta")
+            assert pg.locator(".pl-area").count() >= 2, "faltan áreas en el plano"
+            assert pg.locator(".pl-eq").count() == 3, "faltan equipos en el plano"
+            assert pg.locator('.pl-eq[data-eq="V-201"] .pl-aviso').count() == 1, "V-201 debe tener aviso"
+            assert pg.locator('.pl-eq[data-eq="L-101"] .pl-aviso').count() == 1, "la línea debe tener aviso"
+            pop = pg.locator('.pl-eq[data-eq="V-201"] .pl-pop')
+            assert not pop.is_visible(), "el pop-up no debe verse antes del clic"
+            pg.locator('.pl-eq[data-eq="V-201"]').click()
+            expect(pop).to_be_visible()
+            cap("01b_plano_popup")
+            pop.locator('.pl-cml[data-cml="CML-201-02"]').click()
+            pg.wait_for_timeout(600)
+            assert "CML-201-02" in pg.url, f"el pop-up no abrió el CML: {pg.url}"
+            pg.go_back()
+            pg.wait_for_timeout(500)
+            pg.locator(".pl-area-cab").first.click()
+            pg.wait_for_timeout(400)
+            assert pg.locator(".pl-area.sel").count() == 1 and pg.locator(".pl-eq.atenuado").count() >= 1, "el área no filtró"
+            pg.locator('[data-act="limpiar_filtros"]').click()
+            pg.wait_for_timeout(300)
+        paso("Plano de planta: avisos, pop-up con CML y filtro por área", plano)
+
         def equipo():
             abrir_equipo("V-201")
             assert pg.locator(".chip.sel").get_attribute("data-id") == "CML-201-03", "no abrió el CML más crítico por defecto"
             pg.locator('.chip[data-id="CML-201-02"]').click()
             expect(pg.locator(".grafico img")).to_be_visible()
+            ficha = pg.locator(".ficha-cml").inner_text()
+            assert "Pérdida acumulada" in ficha and "Llega a t mín" in ficha, "falta la ficha del CML"
             cap("02_equipo_cml")
         paso("Equipo: abre el CML crítico; se puede elegir otro", equipo)
 
@@ -133,6 +158,7 @@ def recorrer(url, salida):
             pg.locator('[data-act="subvista"][data-vista="diseno"]').click()
             pg.wait_for_timeout(300)
             campo = pg.locator('input[data-campo="P_diseno_MPa"]')
+            assert pg.locator(".esc-fila .val").first.inner_text().strip().endswith("mm"), "falta la unidad en la escalera"
             antes = pg.locator(".esc-fila .val").nth(5).inner_text()
             campo.fill("2.0")
             campo.press("Tab")

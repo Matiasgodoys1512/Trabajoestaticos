@@ -11,15 +11,15 @@
 <body>
   <header class="topbar">
     <div class="marca">
-      <strong>GIEE</strong> · Gestión de Integridad de Equipos Estáticos
-      <span class="sub">Prototipo académico MAN040-B</span>
+      <div class="logo">GI</div>
+      <div><strong>Gestión de Integridad · Equipos Estáticos</strong><span class="sub">Prototipo académico MAN040-B</span></div>
     </div>
     <div class="acciones">
       <button data-act="guardar">Guardar</button>
-      <button data-act="exportar">Exportar proyecto</button>
-      <label class="boton">Importar proyecto<input type="file" accept=".json" data-act="importar" hidden></label>
-      <button data-act="exportar_csv">Exportar CSV</button>
-      <button data-act="restablecer" class="secundario">Restablecer caso demo</button>
+      <button data-act="exportar">Exportar</button>
+      <label class="boton">Importar<input type="file" accept=".json" data-act="importar" hidden></label>
+      <button data-act="exportar_csv">CSV</button>
+      <button data-act="restablecer">Restablecer demo</button>
     </div>
   </header>
 
@@ -32,12 +32,12 @@
     <aside id="sidebar"></aside>
     <main>
       <nav class="tabs" id="tabs">
-        <button data-act="tab" data-tab="panel">Panel de resultados</button>
-        <button data-act="tab" data-tab="equipo">Equipo y CML</button>
-        <button data-act="tab" data-tab="diseno">Diseño y espesores</button>
-        <button data-act="tab" data-tab="rbi">Módulo RBI</button>
+        <button data-act="tab" data-tab="panel">Panel</button>
+        <button data-act="tab" data-tab="equipo">Equipo</button>
+        <button data-act="tab" data-tab="diseno">Diseño</button>
+        <button data-act="tab" data-tab="rbi">RBI</button>
         <button data-act="tab" data-tab="validacion">Validación</button>
-        <button data-act="tab" data-tab="acerca">Alcance y referencias</button>
+        <button data-act="tab" data-tab="acerca">Alcance</button>
       </nav>
       <section id="contenido"></section>
     </main>

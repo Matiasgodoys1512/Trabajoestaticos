@@ -18,6 +18,7 @@
 - Todo lo instalable va en `.venv/` (ignorado por git). No tocar el Python global, el PATH ni la config global de Git.
 - Las normas (PDF/MD con copyright) **no se suben** al repo. Están en `C:/Users/matia/Downloads/Trabajo final estaticos` (solo lectura).
 - Commits y push solo cuando el usuario lo pida. Sin líneas de coautoría de Claude.
+- Versionado: tras cada push, tag anotado subiendo la versión menor (0.1.0 → 0.2.0 → …), sin prefijo "v".
 
 ## Referencias
 - Carpeta de normas/clases: ver arriba. MD: API 650, RP 580, RP 581, B31.3, VIII-1. II-D solo en PDF (Tabla 1A, p. 82–84). PPTX de clases 01–06.

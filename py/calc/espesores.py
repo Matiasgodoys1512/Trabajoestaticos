@@ -21,20 +21,44 @@ def tuberia_b313(P, D, S, E=1.0, W=1.0, Y=0.4):
 
 
 def recipiente_ug27(P, R, S, E):
-    """ASME VIII-1 UG-27(c)(1). P [MPa], R radio interior [mm], S [MPa], E eficiencia de junta."""
-    t = P * R / (S * E - 0.6 * P)
+    """ASME VIII-1 UG-27(c). P [MPa], R radio interior [mm], S [MPa], E eficiencia de junta.
+    Gobierna el mayor entre (c)(1) esfuerzo circunferencial y (c)(2) esfuerzo longitudinal."""
+    if S * E - 0.6 * P <= 0:
+        raise ValueError("UG-27: S·E − 0,6·P ≤ 0 (presión excesiva para el material)")
+    t1 = P * R / (S * E - 0.6 * P)
+    t2 = P * R / (2 * S * E + 0.4 * P)
     avisos = []
-    if P > 0.385 * S * E or t > R / 2:
+    if P > 0.385 * S * E or t1 > R / 2:
         avisos.append("P > 0,385·S·E o t > R/2: fuera de alcance de UG-27(c)(1) (ver App. 1)")
-    return _res(t, "t = P·R / (S·E − 0,6·P)", "ASME BPVC VIII-1 2019, UG-27(c)(1)",
-                {"P [MPa]": P, "R [mm]": R, "S [MPa]": S, "E": E}, avisos=avisos)
+    return _res(max(t1, t2), "t = máx[P·R / (S·E − 0,6·P) ; P·R / (2·S·E + 0,4·P)]", "ASME BPVC VIII-1 2019, UG-27(c)(1) y (c)(2)",
+                {"P [MPa]": P, "R [mm]": R, "S [MPa]": S, "E": E}, avisos=avisos, t_circ=t1, t_long=t2,
+                gobierna="circunferencial (c)(1)" if t1 >= t2 else "longitudinal (c)(2)")
 
 
-def tanque_api650_diseno(D, H, G, Sd, CA=0.0):
-    """API 650 §5.6.3.2 (1-foot, SI). D [m], H [m] desde fondo de la virola, Sd [MPa], CA [mm]."""
-    t = 4.9 * D * (H - 0.3) * G / Sd + CA
-    return _res(t, "td = 4,9·D·(H − 0,3)·G / Sd + CA", "API 650-2013 §5.6.3.2",
-                {"D [m]": D, "H [m]": H, "G": G, "Sd [MPa]": Sd, "CA [mm]": CA})
+def t_min_nominal_api650(D):
+    """API 650 §5.6.1.1: espesor nominal mínimo del manto según diámetro [m] → [mm]."""
+    if D < 15:
+        return 5.0
+    if D <= 36:
+        return 6.0
+    if D <= 60:
+        return 8.0
+    return 10.0
+
+
+def tanque_api650_diseno(D, H, G, Sd, CA=0.0, St=None):
+    """API 650 §5.6.3.2 (1 pie, SI). D [m], H [m] desde el fondo de la virola, Sd/St [MPa], CA [mm].
+    Espesor requerido = máx(td, tt, mínimo nominal §5.6.1.1)."""
+    if H <= 0.3:
+        raise ValueError("API 650: H debe ser mayor que 0,3 m")
+    td = 4.9 * D * (H - 0.3) * G / Sd + CA
+    tt = 4.9 * D * (H - 0.3) / St if St else 0.0
+    tmin_nom = t_min_nominal_api650(D)
+    t = max(td, tt, tmin_nom)
+    gob = "td (producto)" if t == td else ("tt (prueba hidrostática)" if t == tt else "mínimo nominal §5.6.1.1")
+    return _res(t, "t = máx[td = 4,9·D·(H − 0,3)·G/Sd + CA ; tt = 4,9·D·(H − 0,3)/St ; t_nom mín]", "API 650-2013 §5.6.3.2 y §5.6.1.1",
+                {"D [m]": D, "H [m]": H, "G": G, "Sd [MPa]": Sd, "St [MPa]": St or "—", "CA [mm]": CA},
+                td=td, tt=tt, t_nom_min=tmin_nom, gobierna=gob)
 
 
 def tanque_api653_tmin(D, H, G, YS, TS, E=1.0, virola=1):
@@ -45,9 +69,11 @@ def tanque_api653_tmin(D, H, G, YS, TS, E=1.0, virola=1):
     else:
         S = min(0.88 * YS, 0.472 * TS)
         regla = "S = mín(0,88·Y; 0,472·T) (virolas superiores)"
+    if H <= 0.3:
+        raise ValueError("API 653: H debe ser mayor que 0,3 m")
     t_calc = 4.9 * D * (H - 0.3) * G / (S * E)
-    t = max(t_calc, 2.5)
-    return _res(t, "t_min = 4,9·D·(H − 0,3)·G / (S·E), ≥ 2,5 mm", "API 653 §4.3.3.1 (edición a declarar)",
+    t = max(t_calc, 2.54)
+    return _res(t, "t_min = 4,9·D·(H − 0,3)·G / (S·E), ≥ 2,54 mm (0,1 in)", "API 653 §4.3.3.1 (edición a declarar)",
                 {"D [m]": D, "H [m]": H, "G": G, "Y [MPa]": YS, "T [MPa]": TS, "E": E, "virola": virola},
                 S=S, regla_S=regla, t_calc=t_calc)
 
@@ -92,8 +118,8 @@ def espesor_diseno(eq, cml=None):
     CA = d.get("CA_mm", 0.0)
     if fam == "tanque":
         mat = MATERIALES[eq["material"]]
-        r = tanque_api650_diseno(d["D_m"], d["H_m"], d["G"], mat["Sd"], CA)
-        r["t_calc"] = r["valor"] - CA
+        r = tanque_api650_diseno(d["D_m"], d["H_m"], d["G"], mat["Sd"], CA, mat["St"])
+        r["t_calc"] = r["td"] - CA
         return r
     base = evaluar_equipo(eq, cml)
     t = base["valor"]

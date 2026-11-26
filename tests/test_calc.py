@@ -58,7 +58,7 @@ def test_api650_y_653():
     assert t["valor"] == pytest.approx(1031.94 / 163.02, rel=1e-4)             # 6,330 mm
     t3 = es.tanque_api653_tmin(20, 4, 0.9, 205, 380, virola=3)
     assert t3["S"] == pytest.approx(min(180.4, 179.36))
-    assert es.tanque_api653_tmin(20, 0.5, 0.9, 205, 380, virola=5)["valor"] == 2.5   # mínimo absoluto
+    assert es.tanque_api653_tmin(20, 0.5, 0.9, 205, 380, virola=5)["valor"] == 2.54   # mínimo absoluto
 
 
 # ---------- Validaciones de datos ----------
@@ -137,3 +137,42 @@ def test_riesgo_y_matriz():
     assert r["R_A"] == pytest.approx(3.06e-5 * 50 * 200)
     assert (r["cat_pof"], r["cat_area"], r["cat_fin"]) == ("3", "C", "C")
     assert rbi.f_ms(50) == pytest.approx(1.0)
+
+
+# ---------- Correcciones de la revisión técnica ----------
+def test_ug27_gobierna_mayor_y_longitudinal():
+    r = es.recipiente_ug27(1.5, 750, 137.9, 0.85)
+    assert r["t_circ"] > r["t_long"] and r["valor"] == r["t_circ"]
+    assert r["t_long"] == pytest.approx(1.5 * 750 / (2 * 137.9 * 0.85 + 0.6))
+
+
+def test_api650_tt_y_minimo_nominal():
+    r = es.tanque_api650_diseno(20, 12, 0.85, 137, 1.5, St=154)
+    assert r["tt"] == pytest.approx(4.9 * 20 * 11.7 / 154)
+    assert r["valor"] == pytest.approx(r["td"]) and "td" in r["gobierna"]
+    # tanque chico y bajo: gobierna el mínimo nominal (D < 15 m → 5 mm)
+    assert es.tanque_api650_diseno(10, 2, 0.85, 137, 0, St=154)["valor"] == 5.0
+    # agua (G = 1) con Sd alto: puede gobernar tt
+    assert "tt" in es.tanque_api650_diseno(30, 15, 0.7, 160, 0, St=171)["gobierna"]
+
+
+def test_una_medicion_bajo_minimo_no_es_insuficiente():
+    eq = {"familia": "recipiente", "material": "SA-516-70",
+          "diseno": {"P_diseno_MPa": 1.5, "D_int_mm": 1500, "T_diseno_C": 150, "E": 0.85}}
+    r = ins.evaluar_cml(eq, {"mediciones": [{"fecha": "2025-01-01", "espesor_mm": 9.0}]}, date(2026, 11, 24))
+    assert r["condicion"] == "bajo_minimo"
+
+
+def test_cr_cero_aplica_intervalo_maximo():
+    eq = {"familia": "recipiente", "material": "SA-516-70",
+          "diseno": {"P_diseno_MPa": 1.5, "D_int_mm": 1500, "T_diseno_C": 150, "E": 0.85}}
+    ms = [{"fecha": "2020-01-01", "espesor_mm": 14.0}, {"fecha": "2025-01-01", "espesor_mm": 14.0}]
+    r = ins.evaluar_cml(eq, {"mediciones": ms}, date(2026, 11, 24))
+    assert r["intervalo"] == 10 and r["proxima"] == "2035-01-01" and r["condicion"] == "normal"
+    assert ins.intervalo("tanque", None, cr_conocida=True)[0] == 15
+    assert ins.intervalo("recipiente", None, cr_conocida=False)[0] is None
+
+
+def test_ug27_presion_excesiva():
+    with pytest.raises(ValueError):
+        es.recipiente_ug27(200, 750, 137.9, 0.85)

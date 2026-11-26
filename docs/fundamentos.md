@@ -40,12 +40,15 @@ Unidades internas: **SI** (mm, MPa, °C, m, años). Conversión: 1 ksi = 6,89475
 t = P·D / [2 (S·E·W + P·Y)], válida para t < D/6. Y = 0,4 (acero ferrítico ≤ 482 °C, Tabla 304.1.1); W = 1,0 (≤ 427 °C, Tabla 302.3.5).
 t_estructural: ingresado por el usuario (⚠️ API 574 da valores por defecto según el NPS).
 
-### Recipiente: ASME VIII-1 UG-27(c)(1) (esfuerzo circunferencial)
-t = P·R / (S·E − 0,6·P), con R = radio interior; válida para P ≤ 0,385·S·E.
+### Recipiente: ASME VIII-1 UG-27(c)
+- (c)(1) circunferencial: t₁ = P·R / (S·E − 0,6·P), válida para P ≤ 0,385·S·E.
+- (c)(2) longitudinal: t₂ = P·R / (2·S·E + 0,4·P).
+- t = máx(t₁; t₂), con R = radio interior. En cilindros gobierna normalmente (c)(1).
 
 ### Tanque: API 650 §5.6.3.2 (método de 1 pie) y API 653 §4.3.3.1 ⚠️
-- Diseño: td = 4,9·D·(H − 0,3)·G / Sd + CA [mm; D, H en m].
-- Servicio (API 653): t_min = 4,9·D·(H − 0,3)·G / (S·E), con S = mín(0,80·Y; 0,429·T) para las virolas 1 y 2, y S = mín(0,88·Y; 0,472·T) para las demás. t_min ≥ 2,5 mm.
+- Diseño: td = 4,9·D·(H − 0,3)·G / Sd + CA; prueba hidrostática: tt = 4,9·D·(H − 0,3) / St [mm; D, H en m].
+- Espesor de diseño = máx(td; tt; mínimo nominal §5.6.1.1: 5 mm si D < 15 m, 6 mm hasta 36 m, 8 mm hasta 60 m, 10 mm sobre 60 m).
+- Servicio (API 653): t_min = 4,9·D·(H − 0,3)·G / (S·E), con S = mín(0,80·Y; 0,429·T) para las virolas 1 y 2, y S = mín(0,88·Y; 0,472·T) para las demás. t_min ≥ 2,54 mm (0,1 in).
 - H se mide desde el fondo de la virola evaluada hasta el nivel máximo de líquido.
 
 ## Corrosión y vida remanente (API 510 / 570, clase 05)
@@ -54,14 +57,16 @@ t = P·R / (S·E − 0,6·P), con R = radio interior; válida para P ≤ 0,385·
 - CR adoptada = máx(CR_LP, CR_CP) (criterio conservador, ppt 05 lámina 11).
 - RL = (t_actual − t_min) / CR
 
+Condición (prioridad): **bajo el mínimo** (t_actual < t_min, aunque haya una sola lectura) > **información insuficiente** (sin CR: < 2 mediciones comparables) > **vencida** > **alerta** > **normal**.
+
 Validaciones: menos de 2 mediciones comparables → "información insuficiente"; fechas duplicadas o desordenadas → error; CR ≤ 0 → se informa y no se calcula RL por esa vía; t_actual < t_min → "bajo el mínimo". Una medición marcada como **reemplazo/reparación/cambio de punto** reinicia la serie comparable.
 
 ## Próxima inspección (mediciones de espesor)
 | Norma | Intervalo |
 |---|---|
-| API 510 §7.1.1 ⚠️ | mín(RL/2; 10 años). Si RL < 4 años: mín(RL; 2 años). |
-| API 570 §6.3.3 (ppt 05 lám. 13) | mín(RL/2; máximo de la tabla por clase: Clase 1 = 5, Clase 2 = 10, Clase 3 = 10 años). Si RL < 4: mín(RL; 2). |
-| API 653 §6.3.3.2 ⚠️ (UT externo del manto) | CR conocida: mín(RCA/(2·N) = RL/2; 15 años). CR desconocida: 5 años. Fuera de alcance: inspección interna y fondo (datos pendientes). |
+| API 510 §7.1.1 ⚠️ | mín(RL/2; 10 años). Si RL < 4 años: mín(RL; 2 años). CR ≤ 0: 10 años. Sin CR: programar 2ª medición. |
+| API 570 §6.3.3 (ppt 05 lám. 13) | mín(RL/2; máximo de la tabla por clase: Clase 1 = 5, Clase 2 = 10, Clase 3 = 10 años). Si RL < 4: mín(RL; 2). CR ≤ 0 o sin CR: máximo de la clase. |
+| API 653 §6.3.3.2 ⚠️ (UT externo del manto) | CR conocida: mín(RCA/(2·N) = RL/2; 15 años). CR desconocida: 5 años. CR ≤ 0: 15 años. Fuera de alcance: inspección interna y fondo (datos pendientes). |
 
 Fecha próxima = fecha de la última medición + intervalo. Estado **vencida** si hoy > fecha próxima.
 
@@ -79,3 +84,6 @@ Fecha próxima = fecha de la última medición + intervalo. Estado **vencida** s
 
 **Una inspección no recupera espesor**: solo cambia los Po_i (menor incertidumbre sobre la CR real) y, por lo tanto, el D_f.
 Modelo académico simplificado: un solo mecanismo, sin cladding, F_OM = F_IP = F_DL = 1 por defecto, consecuencias ingresadas por el usuario.
+
+## Validación de datos (seguridad)
+`py/proyecto.py` valida todo proyecto importado o recuperado del navegador: familias y materiales del catálogo, rangos físicos de cada dato de diseño, fechas ISO entre 1950 y 2100, espesores 0–300 mm, IDs únicos, coordenadas 0–100 %, imágenes solo PNG/JPG (rutas locales o embebidas) y adjuntos solo PDF embebido. Un archivo con errores se rechaza completo, indicando el motivo.

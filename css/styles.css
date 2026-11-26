@@ -86,8 +86,8 @@ main { padding: 0 24px 32px; overflow-x: auto; max-width: 1500px; }
 .stat .v { font-size: 22px; font-weight: 650; color: var(--tinta); font-variant-numeric: tabular-nums; margin-top: 2px; }
 .stat .v small { font-size: 12px; color: var(--tinta2); font-weight: 400; margin-left: 2px; }
 .stat .s { font-size: 11px; color: var(--tinta2); }
-.stat.marca { background: var(--v800); border-color: var(--v800); }
-.stat.marca .l, .stat.marca .s { color: var(--v200); } .stat.marca .v { color: #fff; }
+.stat.destacado { background: var(--v800); border-color: var(--v800); }
+.stat.destacado .l, .stat.destacado .s { color: var(--v200); } .stat.destacado .v { color: #fff; }
 .stat.estado { border-top: 4px solid var(--c); }
 .stat.estado .v { display: flex; align-items: center; gap: 8px; }
 
@@ -174,3 +174,28 @@ form.f .ancho { grid-column: 1 / -1; }
 .muted { color: var(--muted); font-size: 12px; }
 .grafico img { width: 100%; display: block; }
 a { color: var(--v700); }
+
+/* ---------- accesibilidad y estado ---------- */
+.saltar { position: absolute; left: -999px; top: 8px; background: #fff; color: var(--v900); padding: 8px 12px; border-radius: 6px; z-index: 20; }
+.saltar:focus { left: 8px; }
+:focus-visible { outline: 3px solid var(--v500); outline-offset: 2px; }
+[role="button"] { cursor: pointer; }
+.estado-guardado { font-size: 11px; opacity: .7; align-self: center; margin-right: 6px; }
+.toast-error { background: #7f1d1d; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+@media (max-width: 700px) {
+  main { padding: 0 12px 24px; }
+  .topbar { padding: 10px 12px; }
+  .marca .sub { display: none; }
+  .tabs { width: 100%; }
+  .tabs button { flex: 1; padding: 7px 8px; }
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+@media print {
+  .topbar .acciones, aside, .tabs, form, details > summary::before { display: none !important; }
+  .layout { display: block; }
+  details { border: 0; } details > .cuerpo { display: block; }
+  .card, .stat { box-shadow: none; break-inside: avoid; }
+}
+
+.tabs button { transition: none; }

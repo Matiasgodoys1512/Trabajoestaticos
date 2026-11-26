@@ -28,7 +28,10 @@
 
 ## Arquitectura
 - `py/calc/` → materiales, espesores, corrosion, inspeccion, rbi (probados en `tests/`).
-- `py/app.py` → UI PyScript. `index.html`, `css/` → interfaz.
+- `py/proyecto.py` → validación/saneamiento de todo dato externo (import, localStorage). Probado en `tests/test_proyecto.py`.
+- `py/ui.py` → vistas HTML (todo texto con `esc()`), `py/app.py` → eventos (delegación, `attr()` para leer data-*), estado y archivos.
+- `index.html`, `css/` → interfaz. `.nojekyll` es obligatorio (GitHub Pages ignora `__init__.py` sin él).
+- E2E en navegador real: `.venv/Scripts/python tools/e2e.py` (Playwright + Chromium dentro de `.venv/ms-playwright`).
 - `data/` → caso demostrativo (JSON) + esquemas PNG.
 
 ## Alcance técnico

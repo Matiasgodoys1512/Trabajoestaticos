@@ -3,35 +3,47 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Prototipo académico de gestión de integridad de equipos estáticos: CML/TML, corrosión, vida remanente, próxima inspección y RBI (API 510/570/653, API RP 581).">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="theme-color" content="#12372a">
   <title>Gestión de Integridad · Equipos Estáticos</title>
-  <link rel="stylesheet" href="https://pyscript.net/releases/2025.11.1/core.css">
-  <script type="module" src="https://pyscript.net/releases/2025.11.1/core.js"></script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%233a8a64'/%3E%3Ctext x='16' y='21' font-family='Arial' font-size='13' font-weight='700' fill='white' text-anchor='middle'%3EGI%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://pyscript.net/releases/2025.11.1/core.css"
+        integrity="sha384-C7Vo5fjeYiyN27fdJgeiteaUwrLVW0+I9EbpT1kBxsxac8+kxV5zYrLayugNSu1q" crossorigin="anonymous">
+  <script type="module" src="https://pyscript.net/releases/2025.11.1/core.js"
+          integrity="sha384-NPt4m1xXIfnCzPSm2qAaMebO2M/GsTSGsqQV/Rwu0R9F5CSFIjYLQbxewqKvLr6p" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
+  <a class="saltar" href="#contenido">Saltar al contenido</a>
   <header class="topbar">
     <div class="marca">
-      <div class="logo">GI</div>
+      <div class="logo" aria-hidden="true">GI</div>
       <div><strong>Gestión de Integridad · Equipos Estáticos</strong><span class="sub">Prototipo académico MAN040-B</span></div>
     </div>
     <div class="acciones">
-      <button data-act="guardar">Guardar</button>
-      <button data-act="exportar">Exportar</button>
-      <label class="boton">Importar<input type="file" accept=".json" data-act="importar" hidden></label>
-      <button data-act="exportar_csv">CSV</button>
-      <button data-act="restablecer">Restablecer demo</button>
+      <span id="estado-guardado" class="estado-guardado" aria-live="polite"></span>
+      <button data-act="guardar" title="Guardar en este navegador">Guardar</button>
+      <button data-act="exportar" title="Descargar el proyecto completo (JSON)">Exportar</button>
+      <label class="boton" title="Cargar un proyecto exportado (JSON)">Importar<input type="file" accept=".json,application/json" data-act="importar" hidden></label>
+      <button data-act="exportar_csv" title="Descargar el resumen de CML (CSV)">CSV</button>
+      <button data-act="restablecer" title="Volver al caso demostrativo">Restablecer demo</button>
     </div>
   </header>
 
-  <div id="cargando" class="cargando">
-    <div class="spinner"></div>
-    <p>Cargando Python en el navegador (Pyodide)…<br><small>La primera carga puede tardar 20–40 s.</small></p>
+  <noscript><div class="error" style="margin:24px">Esta aplicación necesita JavaScript habilitado (ejecuta Python en el navegador con PyScript).</div></noscript>
+
+  <div id="cargando" class="cargando" role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <p>Cargando Python en el navegador (Pyodide)…<br><small>La primera carga puede tardar 20–40 s; luego queda en caché.</small></p>
+    <p id="carga-lenta" class="muted" hidden>La carga está tardando más de lo normal. Revisa la conexión a internet y recarga la página (Ctrl + F5).</p>
   </div>
 
   <div class="layout" id="app" hidden>
-    <aside id="sidebar"></aside>
+    <aside id="sidebar" aria-label="Equipos y filtros"></aside>
     <main>
-      <nav class="tabs" id="tabs">
+      <nav class="tabs" id="tabs" aria-label="Secciones">
         <button data-act="tab" data-tab="panel">Panel</button>
         <button data-act="tab" data-tab="equipo">Equipo</button>
         <button data-act="tab" data-tab="diseno">Diseño</button>
@@ -39,11 +51,15 @@
         <button data-act="tab" data-tab="validacion">Validación</button>
         <button data-act="tab" data-tab="acerca">Alcance</button>
       </nav>
-      <section id="contenido"></section>
+      <section id="contenido" tabindex="-1"></section>
     </main>
   </div>
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+  <script>
+    // Aviso si Pyodide no termina de cargar (sin red o CDN caído). Única línea de JS propia.
+    setTimeout(function () { if (document.getElementById("app").hidden) document.getElementById("carga-lenta").hidden = false; }, 90000);
+  </script>
   <script type="py" src="py/app.py" config="pyscript.toml"></script>
 </body>
 </html>

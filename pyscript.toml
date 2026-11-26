@@ -9,3 +9,4 @@ packages = ["numpy", "matplotlib", "pandas"]
 "py/calc/inspeccion.py" = "calc/inspeccion.py"
 "py/calc/rbi.py" = "calc/rbi.py"
 "py/ui.py" = "ui.py"
+"py/proyecto.py" = "proyecto.py"

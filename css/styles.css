@@ -601,3 +601,72 @@ form.f label.editado { color: #8a5a00; }
   .caja-fecha span { display: none; }
   .tabla-fija td:first-child { min-width: 120px; }
 }
+
+/* ---------- portada v2: hero centrado, ilustración viva y color por familia ---------- */
+.hero-panel { position: relative; overflow: hidden; margin: 4px 0 22px; padding: 46px 40px 28px; border-radius: 32px; text-align: center;
+  background:
+    radial-gradient(700px 320px at 8% 0%, rgba(61, 187, 131, .22), transparent 65%),
+    radial-gradient(640px 320px at 95% 8%, rgba(63, 176, 214, .22), transparent 62%),
+    radial-gradient(720px 300px at 55% 108%, rgba(234, 165, 63, .20), transparent 62%),
+    linear-gradient(180deg, #fbfdfc, #f4f8f6);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .04), 0 24px 60px rgba(31, 122, 77, .08); }
+.hero-panel .hero { max-width: 880px; margin: 0 auto; padding: 18px 0 8px; }
+.hero-panel .hero h1 { font-size: clamp(34px, 5vw, 62px); }
+.hero-panel .lead { margin: 0 auto 26px; max-width: 680px; }
+.hero-panel .cta { justify-content: center; }
+.degradado { background: linear-gradient(90deg, #1f7a4d 0%, #0e6f8f 55%, #b5651d 100%); -webkit-background-clip: text; background-clip: text;
+  color: transparent; }
+.pildora-hero { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: var(--pildora); font-size: 12.5px;
+  font-weight: 600; color: #17643f; background: rgba(255, 255, 255, .75); box-shadow: 0 0 0 1px rgba(31, 122, 77, .18); backdrop-filter: blur(6px); }
+.pildora-hero::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #3dbb83; box-shadow: 0 0 0 4px rgba(61, 187, 131, .2); }
+.ilu-marco { margin: 30px auto 0; max-width: 1040px; padding: 18px 18px 12px; border-radius: 24px; background: rgba(255, 255, 255, .72);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .05), 0 10px 30px rgba(0, 0, 0, .05); backdrop-filter: blur(8px); }
+.ilu { display: block; width: 100%; height: auto; }
+.ilu-eq { cursor: pointer; outline: none; transition: opacity .2s; }
+.ilu-eq:hover, .ilu-eq:focus-visible { opacity: .82; }
+.ilu-eq:focus-visible path:first-child { stroke-width: 5; }
+.ilu-pulso { transform-box: fill-box; transform-origin: center; animation: ilu-pulso 2s ease-out infinite; }
+@keyframes ilu-pulso { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(2.6); opacity: 0; } }
+.ilu-marco figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 18px; margin-top: 8px; font-size: 12px; color: var(--muted); text-align: left; }
+.ilu-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.ilu-leyenda span { display: inline-flex; align-items: center; gap: 5px; }
+.ilu-leyenda i { width: 8px; height: 8px; border-radius: 50%; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 22px; }
+.kpi { display: flex; align-items: center; gap: 16px; padding: 20px 22px; border-radius: var(--r-xl); background: var(--sup); box-shadow: var(--sombra);
+  transition: box-shadow .2s, transform .2s; }
+.kpi:hover { box-shadow: var(--sombra-h); transform: translateY(-2px); }
+.kpi-ico { flex: none; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 15px; color: #fff;
+  background: linear-gradient(145deg, var(--k), color-mix(in srgb, var(--k) 62%, #fff)); box-shadow: 0 8px 18px color-mix(in srgb, var(--k) 30%, transparent); }
+.kpi-ico svg { width: 24px; height: 24px; }
+.kpi-v { font-size: 26px; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.kpi-l { margin-top: 2px; font-size: 13px; font-weight: 500; color: var(--tinta2); }
+.kpi-s { margin-top: 2px; font-size: 12px; color: var(--muted); }
+
+.card-atencion .fila-accion { box-shadow: inset 3px 0 0 var(--c); border-radius: 0 var(--r) var(--r) 0; }
+.titulo-centro { margin: 46px 0 18px; text-align: center; }
+.titulo-centro .eyebrow { margin-bottom: 4px; }
+.titulo-centro .titulo-seccion { margin: 0; font-size: clamp(24px, 2.6vw, 32px); }
+
+.familia { padding: 0; overflow: hidden; gap: 0; }
+.familia-ilu { --sup: color-mix(in srgb, var(--f1) 70%, var(--f2)); position: relative; height: 150px; display: grid; place-items: center;
+  color: #fff; background: radial-gradient(260px 140px at 80% 0%, rgba(255, 255, 255, .28), transparent 70%), linear-gradient(135deg, var(--f1), var(--f2)); }
+.familia-ilu svg { width: 170px; height: 120px; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .15)); }
+.familia-txt { padding: 20px 22px 0; }
+.familia-txt .eyebrow { color: var(--f1); }
+.familia-pie { padding: 16px 22px 20px; }
+
+.pasos { counter-reset: paso; }
+.pasos li { position: relative; overflow: hidden; }
+.pasos li::after { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--p), color-mix(in srgb, var(--p) 40%, #fff)); }
+.pasos .paso-n { width: 36px; height: 36px; border-radius: 12px; font-size: 15px;
+  background: linear-gradient(145deg, var(--p), color-mix(in srgb, var(--p) 60%, #fff)); box-shadow: 0 6px 14px color-mix(in srgb, var(--p) 28%, transparent); }
+
+@media (max-width: 700px) {
+  .hero-panel { padding: 28px 16px 16px; border-radius: 24px; }
+  .ilu-marco { padding: 10px; border-radius: 16px; }
+  .ilu-marco figcaption { flex-direction: column; }
+  .kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi { flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; }
+  .kpi-v { font-size: 21px; }
+}

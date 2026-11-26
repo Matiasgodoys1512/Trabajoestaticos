@@ -916,38 +916,123 @@ ICONO_FAMILIA = {
 CODIGOS = {"tuberia": "ASME B31.3 · API 570", "recipiente": "ASME VIII-1 · API 510", "tanque": "API 650 · API 653"}
 
 
+COLOR_FAMILIA = {"tuberia": ("#1f7a4d", "#3dbb83"), "recipiente": ("#0e6f8f", "#3fb0d6"), "tanque": ("#b5651d", "#eaa53f")}
+ICONO_KPI = {
+    "equipos": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V9l8-5 8 5v11M9 20v-6h6v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+    "cml": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>',
+    "accion": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3L2 21h20Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+    "fecha": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+}
+
+
+def _marcadores(e, r, puntos):
+    """Puntos de monitoreo sobre la ilustración: color = condición real; los que requieren acción laten."""
+    h = []
+    for c, (x, y) in zip(e["cmls"], puntos):
+        cond = r["cmls"].get(c["id"], {}).get("condicion", "insuficiente")
+        late = '<circle class="ilu-pulso" cx="{0}" cy="{1}" r="9" fill="{2}"/>'.format(x, y, COLOR[cond]) if cond in AVISO else ""
+        h.append(f'{late}<circle cx="{x}" cy="{y}" r="7" fill="{COLOR[cond]}" stroke="#fff" stroke-width="2.5">'
+                 f'<title>{esc(c["id"])} · {CONDICION[cond]}</title></circle>')
+    return "".join(h)
+
+
+def _rotulo(x, y, e, r):
+    cond = r["cond"]
+    ancho = 22 + 7.2 * len(e["tag"])
+    return (f'<g transform="translate({x - ancho / 2:.0f},{y})"><rect width="{ancho:.0f}" height="26" rx="13" fill="#fff" '
+            f'stroke="rgba(0,0,0,.08)"/><circle cx="13" cy="13" r="4.5" fill="{COLOR[cond]}"/>'
+            f'<text x="23" y="17.5" font-size="12.5" font-weight="600" fill="#1d1d1f">{esc(e["tag"])}</text></g>')
+
+
+def ilustracion_planta(data, res):
+    """Escena esquemática (sin escala): bomba → línea → separador → rack → tanque, con los CML reales del caso."""
+    fam = {f: next((e for e in data["equipos"] if e["familia"] == f), None) for f in FAMILIAS}
+    g = ['<svg class="ilu" viewBox="0 0 1000 320" role="img" aria-label="Esquema de la planta con el estado de sus puntos de monitoreo">',
+         '<defs><linearGradient id="ilu-suelo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e7efe9"/>'
+         '<stop offset="1" stop-color="#e7efe9" stop-opacity="0"/></linearGradient>'
+         '<linearGradient id="ilu-rec" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#d7eef6"/><stop offset=".5" stop-color="#fff"/>'
+         '<stop offset="1" stop-color="#cfe6ef"/></linearGradient>'
+         '<linearGradient id="ilu-tk" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f6e6cf"/><stop offset=".5" stop-color="#fff"/>'
+         '<stop offset="1" stop-color="#f1dcc0"/></linearGradient></defs>',
+         '<rect x="0" y="268" width="1000" height="52" fill="url(#ilu-suelo)"/><path d="M20 268H980" stroke="#c9d6cd" stroke-width="2"/>',
+         # rack de cañerías
+         '<g stroke="#b9c4bd" stroke-width="4" stroke-linecap="round"><path d="M560 268V118M690 268V118M545 118H705M545 150H705"/></g>']
+    t, v, k = fam["tuberia"], fam["recipiente"], fam["tanque"]
+    # bomba + línea de descarga
+    g.append('<g class="ilu-eq" ' + (f'role="button" tabindex="0" data-act="sel_eq" data-id="{esc(t["id"])}" aria-label="Abrir {esc(t["tag"])}"' if t else "") + '>'
+             '<rect x="60" y="226" width="78" height="42" rx="8" fill="#eaf5ef" stroke="#1f7a4d" stroke-width="2.5"/>'
+             '<circle cx="99" cy="226" r="24" fill="#fff" stroke="#1f7a4d" stroke-width="2.5"/><circle cx="99" cy="226" r="8" fill="#1f7a4d"/>'
+             '<path d="M123 226H250V150H392" fill="none" stroke="#1f7a4d" stroke-width="16" stroke-linejoin="round"/>'
+             '<path d="M123 226H250V150H392" fill="none" stroke="#e9f6ef" stroke-width="10" stroke-linejoin="round"/>'
+             '<path d="M180 214v24M300 138v24M360 138v24" stroke="#1f7a4d" stroke-width="4"/>'
+             '<path d="M200 234v34M310 158v110M190 268h20M300 268h20" stroke="#b9c4bd" stroke-width="3" stroke-linecap="round"/>'
+             + (_marcadores(t, res[t["id"]], [(165, 226), (225, 226), (250, 190), (330, 150)]) + _rotulo(190, 168, t, res[t["id"]]) if t else "")
+             + '</g>')
+    # separador vertical
+    g.append('<g class="ilu-eq" ' + (f'role="button" tabindex="0" data-act="sel_eq" data-id="{esc(v["id"])}" aria-label="Abrir {esc(v["tag"])}"' if v else "") + '>'
+             '<path d="M398 72Q398 34 445 34T492 72V214Q492 252 445 252T398 214Z" fill="url(#ilu-rec)" stroke="#0e6f8f" stroke-width="3"/>'
+             '<path d="M398 120h94M398 168h94" stroke="#0e6f8f" stroke-width="1.5" stroke-dasharray="5 5" opacity=".6"/>'
+             '<path d="M445 34V14M445 252v16M412 246l-8 22M478 246l8 22" stroke="#0e6f8f" stroke-width="3" stroke-linecap="round"/>'
+             '<path d="M445 14H560V118" fill="none" stroke="#0e6f8f" stroke-width="7" stroke-linejoin="round"/>'
+             + (_marcadores(v, res[v["id"]], [(445, 96), (445, 144), (445, 196), (420, 120)]) + _rotulo(445, 278, v, res[v["id"]]) if v else "")
+             + '</g>')
+    # línea por el rack hacia el tanque
+    g.append('<path d="M560 118H745V150" fill="none" stroke="#0e6f8f" stroke-width="7" stroke-linejoin="round"/>')
+    # tanque atmosférico
+    g.append('<g class="ilu-eq" ' + (f'role="button" tabindex="0" data-act="sel_eq" data-id="{esc(k["id"])}" aria-label="Abrir {esc(k["tag"])}"' if k else "") + '>'
+             '<path d="M735 150L840 112L945 150V268H735Z" fill="url(#ilu-tk)" stroke="#b5651d" stroke-width="3" stroke-linejoin="round"/>'
+             '<path d="M735 150H945M735 189H945M735 228H945" stroke="#b5651d" stroke-width="1.5" opacity=".55"/>'
+             '<path d="M755 268L800 150" stroke="#b5651d" stroke-width="3"/><path d="M765 268L810 150" stroke="#b5651d" stroke-width="1.5" stroke-dasharray="3 5"/>'
+             + (_marcadores(k, res[k["id"]], [(880, 248), (880, 208), (880, 170), (910, 208)]) + _rotulo(840, 76, k, res[k["id"]]) if k else "")
+             + '</g>')
+    g.append('</svg>')
+    return "".join(g)
+
+
+def kpi(clave, color, label, valor, sub=""):
+    return (f'<div class="kpi" style="--k:{color}"><span class="kpi-ico">{ICONO_KPI[clave]}</span>'
+            f'<div><div class="kpi-v">{valor}</div><div class="kpi-l">{label}</div>{f"<div class=kpi-s>{sub}</div>" if sub else ""}</div></div>')
+
+
 def vista_inicio(data, res):
-    """Portada: qué es la app, qué requiere atención hoy y cómo se usa."""
+    """Portada: qué es la app, el estado de la planta de un vistazo, qué requiere atención y cómo se usa."""
     filas = filas_panel(data, res, {})
     atencion = puntos_atencion(data, res)
     proximas = sorted(fl["Próxima inspección"] for fl in filas
                       if fl["Próxima inspección"] and re.match(r"^\d{4}-", str(fl["Próxima inspección"]))
                       and fl["Próxima inspección"] >= hoy_eval().isoformat())
     n_crit = sum(1 for fl in atencion if fl["Condición"] in ("bajo_minimo", "vencida"))
-    h = ['<section class="hero"><span class="eyebrow">Prototipo académico · MAN040-B</span>'
-         '<h1>Integridad de equipos estáticos,<br>en un solo lugar.</h1>'
+    leyenda = "".join(f'<span><i style="background:{COLOR[k]}"></i>{CONDICION[k]}</span>'
+                      for k in ("normal", "alerta", "vencida", "bajo_minimo", "insuficiente"))
+    h = ['<section class="hero-panel">',
+         '<span class="pildora-hero">Prototipo académico · MAN040-B · ASME / API</span>',
+         '<div class="hero"><h1>Integridad de equipos estáticos,<br><span class="degradado">en un solo lugar.</span></h1>'
          '<p class="lead">Registra mediciones de espesor, calcula corrosión y vida remanente, programa la próxima inspección '
          'según API 510, 570 y 653, y prioriza por riesgo con API RP 581.</p>'
          '<div class="cta"><button data-act="tab" data-tab="planta">Ver estado de la planta</button>'
          + ('<button class="secundario" data-act="ir_critico">Ir al punto más crítico</button>' if atencion else '')
-         + '</div></section>',
-         '<div class="stats">',
-         stat("Equipos", len(data["equipos"]), sub="3 familias", clase="destacado"),
-         stat("Puntos de monitoreo", len(filas), sub="CML / TML"),
-         f'<div class="stat estado" style="--c:{COLOR["bajo_minimo"] if n_crit else COLOR["normal"]}">'
-         f'<div class="l">Requieren acción</div><div class="v">{len(atencion)}</div>'
-         f'<div class="s">{n_crit} crítico(s) · {len(atencion) - n_crit} en alerta</div></div>',
-         stat("Próxima inspección", fecha_cl(proximas[0]) if proximas else "—", sub="programada"),
+         + '</div></div>',
+         f'<figure class="ilu-marco">{ilustracion_planta(data, res)}'
+         f'<figcaption><span class="ilu-ayuda">Esquema sin escala · cada punto es un CML con su condición real · clic en un equipo para abrirlo</span>'
+         f'<span class="ilu-leyenda">{leyenda}</span></figcaption></figure>',
+         '</section>',
+         '<div class="kpis">',
+         kpi("equipos", "#1f7a4d", "Equipos", len(data["equipos"]), f'{len({e["familia"] for e in data["equipos"]})} familias'),
+         kpi("cml", "#0e6f8f", "Puntos de monitoreo", len(filas), "CML / TML"),
+         kpi("accion", COLOR["bajo_minimo"] if n_crit else COLOR["normal"], "Requieren acción", len(atencion),
+             f"{n_crit} crítico(s) · {len(atencion) - n_crit} en alerta"),
+         kpi("fecha", "#b5651d", "Próxima inspección", fecha_cl(proximas[0]) if proximas else "—", f"evaluado al {hoy_eval():%d-%m-%Y}"),
          '</div>']
 
     if atencion:
         items = "".join(
-            f'<li class="fila-accion" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(fl["_eq"])}" data-cml="{esc(fl["_cml"])}">'
+            f'<li class="fila-accion" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(fl["_eq"])}" data-cml="{esc(fl["_cml"])}" '
+            f'style="--c:{COLOR[fl["Condición"]]}">'
             f'{badge(fl["Condición"])}<span class="fa-txt"><b>{esc(fl["CML"])}</b> · {esc(fl["Equipo"])}'
             f'<small>{esc(fl.get("Componente", ""))} · t actual {f(fl.get("t_actual [mm]"))} mm · t mín {f(fl.get("t_min [mm]"))} mm</small></span>'
             f'<span class="fa-ir">{"Inmediata" if fl["Condición"] == "bajo_minimo" else fecha_cl(fl["Próxima inspección"])} ›</span></li>'
             for fl in atencion[:5])
-        h.append(f'<div class="card"><div class="card-cab"><h2>Requiere atención</h2>'
+        h.append(f'<div class="card card-atencion"><div class="card-cab"><h2>Requiere atención</h2>'
                  f'<button class="chico secundario" data-act="tab" data-tab="planta">Ver todos los CML</button></div>'
                  f'<ul class="lista-accion">{items}</ul></div>')
     else:
@@ -959,21 +1044,25 @@ def vista_inicio(data, res):
         if not eqs:
             continue
         e = eqs[0]
+        c1, c2 = COLOR_FAMILIA[fam]
         n_cml = sum(len(x["cmls"]) for x in eqs)
         tarjetas.append(
-            f'<div class="familia" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(e["id"])}" '
-            f'aria-label="Abrir {esc(e["tag"])}, {nombre}"><div class="familia-ico">{ICONO_FAMILIA[fam]}</div>'
+            f'<div class="familia" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(e["id"])}" style="--f1:{c1};--f2:{c2}" '
+            f'aria-label="Abrir {esc(e["tag"])}, {nombre}"><div class="familia-ilu">{BOCETO[fam]}</div>'
             f'<div class="familia-txt"><span class="eyebrow">{CODIGOS[fam]}</span><h3>{nombre}</h3>'
             f'<p>{esc(e["tag"])} · {esc(e["descripcion"])}</p></div>'
             f'<div class="familia-pie">{badge(res[e["id"]]["cond"])}<span class="muted">{n_cml} CML ›</span></div></div>')
-    h.append(f'<h2 class="titulo-seccion">Equipos del caso de estudio</h2><div class="familias">{"".join(tarjetas)}</div>')
+    h.append('<div class="titulo-centro"><span class="eyebrow">Tres familias, un mismo flujo</span>'
+             f'<h2 class="titulo-seccion">Equipos del caso de estudio</h2></div><div class="familias">{"".join(tarjetas)}</div>')
 
-    pasos = [("Elige un equipo", "Desde Planta o Equipos. Verás su ubicación técnica, esquema y CML; se abre el más crítico."),
-             ("Revisa el CML", "Espesor actual, mínimo y de alerta, corrosión, vida remanente y la tendencia en el gráfico."),
-             ("Registra una medición", "Ingresa la lectura de UT: la condición y la próxima inspección se recalculan al instante."),
-             ("Evalúa el riesgo", "En Riesgo (RBI) ajusta consecuencias e inspecciones y observa la prioridad en la matriz.")]
-    h.append('<h2 class="titulo-seccion">Cómo se usa</h2><ol class="pasos">' + "".join(
-        f'<li><span class="paso-n">{i}</span><h3>{t}</h3><p>{d}</p></li>' for i, (t, d) in enumerate(pasos, 1)) + '</ol>')
+    pasos = [("Elige un equipo", "Desde Planta o Equipos. Verás su ubicación técnica, esquema y CML; se abre el más crítico.", "#1f7a4d"),
+             ("Revisa el CML", "Espesor actual, mínimo y de alerta, corrosión, vida remanente y la tendencia en el gráfico.", "#0e6f8f"),
+             ("Registra una medición", "Ingresa la lectura de UT: la condición y la próxima inspección se recalculan al instante.", "#b5651d"),
+             ("Evalúa el riesgo", "En Riesgo (RBI) ajusta consecuencias e inspecciones y observa la prioridad en la matriz.", "#7a4fb5")]
+    h.append('<div class="titulo-centro"><span class="eyebrow">En cuatro pasos</span><h2 class="titulo-seccion">Cómo se usa</h2></div>'
+             '<ol class="pasos">' + "".join(
+                 f'<li style="--p:{c}"><span class="paso-n">{i}</span><h3>{t}</h3><p>{d}</p></li>'
+                 for i, (t, d, c) in enumerate(pasos, 1)) + '</ol>')
     h.append('<footer class="pie-inicio"><span>Cálculos verificados en <button class="enlace" data-act="tab" data-tab="validacion">Validación</button>'
              ' · Normas y supuestos en <button class="enlace" data-act="tab" data-tab="acerca">Acerca</button></span>'
              '<a href="https://github.com/Matiasgodoys1512/Trabajoestaticos" target="_blank" rel="noopener noreferrer">Repositorio en GitHub ↗</a></footer>')

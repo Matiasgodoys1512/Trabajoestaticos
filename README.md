@@ -14,6 +14,8 @@ Prototipo académico (MAN040-B, Ingeniería en Mantenimiento Industrial) para ge
 
 ## Funciones
 
+- Portada con el estado del día (puntos que requieren acción), las familias evaluadas y cómo se usa.
+- Navegación con URL propia por vista (botón Atrás, recarga y enlaces directos a un equipo/CML).
 - Estructura planta › área › sistema › equipo, con filtros por ubicación, familia y condición.
 - Ficha técnica, esquema con marcadores CML (coordenadas en % ingresadas por formulario) y adjuntos PDF.
 - Espesores **nominal, requerido por cálculo, de diseño, mínimo en servicio, de alerta y medido**, con ecuación, entradas, unidades y referencia.
@@ -22,16 +24,16 @@ Prototipo académico (MAN040-B, Ingeniería en Mantenimiento Industrial) para ge
 - Detección de datos insuficientes, fechas inconsistentes, CR nula o negativa y reemplazos/reparaciones/cambios de punto.
 - Módulo RBI: factor de daño (API 581 Parte 2 §4), frecuencia de falla, riesgo de área (m²/año) y económico (moneda/año), matrices y prioridad.
 - Guardado automático en el navegador y exportación/importación del proyecto completo (JSON con esquemas y adjuntos).
-- Pestaña **Validación**: comparación de cada familia y del RBI con cálculos independientes (incluye el ejercicio de la clase 05).
+- Sección **Validación**: comparación de cada familia y del RBI con cálculos independientes (incluye el ejercicio de la clase 05).
 
 ## Guion de la demostración (sección 8 del enunciado)
 
-1. **Panel** → las tres familias y sus CML ordenados por severidad.
-2. **Equipo** → seleccionar V-201, ver ubicación técnica, esquema y CML-201-02.
+1. **Inicio** → qué hace la app, qué requiere atención y las tres familias; **Planta** → todos los CML ordenados por severidad.
+2. **Inicio → tarjeta Recipiente** → V-201 se abre en su CML más crítico; las migas muestran la ubicación técnica; elegir CML-201-02 en el esquema.
 3. **Nueva medición** → agregar un espesor: cambian CR, vida remanente, condición y próxima fecha.
-4. **Diseño** → cambiar presión o temperatura: cambia el espesor requerido.
-5. **RBI** → cambiar C<sub>A</sub> o C<sub>E</sub>: cambia el riesgo y su categoría.
-6. **Exportar** → **Restablecer demo** → **Importar**: se recupera el caso. Mostrar **Validación**.
+4. **Diseño y espesores** → cambiar presión o temperatura: cambia el espesor requerido.
+5. **Riesgo (RBI)** → cambiar C<sub>A</sub> o C<sub>E</sub>: cambia el riesgo y su categoría.
+6. **Proyecto → Exportar**, **Restablecer caso demo**, **Importar**: se recupera el caso. Mostrar **Validación**.
 
 ## Arquitectura
 

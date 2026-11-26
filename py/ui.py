@@ -191,34 +191,21 @@ def evaluar_todo(data, hoy=None):
 
 
 # ------------------------------------------------------------------ barra lateral
-def sidebar(data, res, sel_id, filtros):
-    areas = sorted({e["ubicacion"]["area"] for e in data["equipos"]})
-
-    def opts(valores, actual, todos):
-        o = [f'<option value="">{todos}</option>']
-        for v, t in valores:
-            o.append(f'<option value="{esc(v)}" {"selected" if v == actual else ""}>{esc(t)}</option>')
-        return "".join(o)
-
-    activos = sum(1 for v in filtros.values() if v)
-    filt = (f'<select data-act="filtro" data-campo="area">{opts([(a, a) for a in areas], filtros.get("area"), "Todas las áreas")}</select>'
-            f'<select data-act="filtro" data-campo="familia">{opts(FAMILIAS.items(), filtros.get("familia"), "Todas las familias")}</select>'
-            f'<select data-act="filtro" data-campo="cond">{opts(CONDICION.items(), filtros.get("cond"), "Todas las condiciones")}</select>')
-    if activos:
-        filt += '<button class="chico secundario" data-act="limpiar_filtros" style="margin-top:6px">Limpiar filtros</button>'
-    h = [plegable(f"Filtros{f' ({activos})' if activos else ''}", filt, abierto=bool(activos)),
-         '<div class="titulo">Estructura de planta</div>']
+def sidebar(data, res, sel_id, filtros=None):
+    """Estructura de planta (Planta › Área › Sistema › Equipo). Los filtros viven junto a la tabla de Planta."""
+    h = ['<div class="lateral-cab"><span>Equipos</span>'
+         '<button data-act="nuevo_eq" class="secundario chico" title="Registrar un equipo nuevo">+ Nuevo</button></div>']
     arbol = {}
-    for e in filtrar(data, res, filtros):
+    for e in data["equipos"]:
         u = e["ubicacion"]
         arbol.setdefault(u["planta"], {}).setdefault(u["area"], {}).setdefault(u["sistema"], []).append(e)
     h.append('<ul class="arbol">')
     for planta, areas_ in arbol.items():
-        h.append(f'<li><div class="nodo"><b>{esc(planta)}</b></div><ul>')
+        h.append(f'<li><div class="nodo nodo-planta">{esc(planta)}</div><ul>')
         for area, sistemas in areas_.items():
             h.append(f'<li><div class="nodo">{esc(area)}</div><ul>')
             for sist, eqs in sistemas.items():
-                h.append(f'<li><div class="nodo">{esc(sist)}</div>')
+                h.append(f'<li><div class="nodo nodo-sistema">{esc(sist)}</div>')
                 for e in eqs:
                     cond = res[e["id"]]["cond"]
                     act = "activo" if e["id"] == sel_id else ""
@@ -229,7 +216,7 @@ def sidebar(data, res, sel_id, filtros):
                 h.append('</li>')
             h.append('</ul></li>')
         h.append('</ul></li>')
-    h.append('</ul><div style="margin:16px 6px"><button data-act="nuevo_eq" class="secundario chico">+ Nuevo equipo</button></div>')
+    h.append('</ul>')
     return "".join(h)
 
 
@@ -278,11 +265,26 @@ def panel(data, res, filtros):
         if fl["Condición"] in cuenta:
             cuenta[fl["Condición"]] += 1
     n_eq = len({fl["_eq"] for fl in filas})
-    h = ['<div class="stats">', stat("Equipos", n_eq, sub=f"{len(filas)} CML", clase="destacado")]
+    areas = sorted({e["ubicacion"]["area"] for e in data["equipos"]})
+
+    def opts(valores, actual, todos):
+        return f'<option value="">{todos}</option>' + "".join(
+            f'<option value="{esc(v)}" {"selected" if v == actual else ""}>{esc(t)}</option>' for v, t in valores)
+
+    activos = any(filtros.values())
+    barra = ('<div class="filtros" role="group" aria-label="Filtros">'
+             f'<select data-act="filtro" data-campo="area" aria-label="Área">{opts([(x, x) for x in areas], filtros.get("area"), "Todas las áreas")}</select>'
+             f'<select data-act="filtro" data-campo="familia" aria-label="Familia">{opts(FAMILIAS.items(), filtros.get("familia"), "Todas las familias")}</select>'
+             f'<select data-act="filtro" data-campo="cond" aria-label="Condición">{opts(CONDICION.items(), filtros.get("cond"), "Todas las condiciones")}</select>'
+             + ('<button class="chico secundario" data-act="limpiar_filtros">Limpiar filtros</button>' if activos else '')
+             + '</div>')
+    h = ['<div class="cabecera"><h1>Estado de la planta</h1>'
+         '<span class="desc">Todos los puntos de monitoreo, del más grave al menos grave</span></div>',
+         '<div class="stats">', stat("Equipos", n_eq, sub=f"{len(filas)} CML" + (" (filtrado)" if activos else ""), clase="destacado")]
     for k, n in cuenta.items():
         h.append(f'<div class="stat estado" style="--c:{COLOR[k]}"><div class="l">{CONDICION[k]}</div>'
                  f'<div class="v"><span style="color:{COLOR[k]}">{ICONO[k]}</span>{n}</div></div>')
-    h.append('</div><div class="card"><h2>Estado de los puntos de monitoreo</h2>'
+    h.append(f'</div><div class="card"><div class="card-cab"><h2>Puntos de monitoreo (CML)</h2>{barra}</div>'
              '<table><tr><th>Equipo</th><th>CML</th><th>Componente</th><th class="num">t actual</th>'
              '<th class="num">t mín</th><th class="num">CR mm/año</th><th class="num">RL años</th><th>Próxima</th><th>Condición</th></tr>')
     for fl in filas:
@@ -455,7 +457,7 @@ def grafico(eq, c, x):
 def ficha(eq):
     u = eq["ubicacion"]
     mat = MATERIALES.get(eq["material"], {})
-    filas = [("Ubicación", f'{u["area"]} › {u["sistema"]}'), ("Servicio", f'{eq["servicio"]} ({eq["fluido"]})'),
+    filas = [("Ubicación", f'{u["area"]} › {u["sistema"]}'), ("Servicio", eq["servicio"]), ("Fluido", eq["fluido"]),
              ("Material", mat.get("nombre", eq["material"])), ("Códigos", f'{eq["codigo_diseno"]} / {eq["codigo_servicio"]}'),
              ("t nominal", f(eq["t_nom_mm"], 2, "mm")), ("En servicio", fecha_cl(eq.get("fecha_servicio"))),
              ("Operación", f'{f(eq["operacion"]["P_MPa"])} MPa · {f(eq["operacion"]["T_C"], 0)} °C')]
@@ -478,11 +480,11 @@ def esquema(eq, res_eq, cml_sel):
     return "".join(h)
 
 
-def vista_equipo(data, res, eq, cml_sel):
+def vista_equipo(data, res, eq, cml_sel, cabecera=True):
     r = res[eq["id"]]
     h = [f'<div class="cabecera"><h1>{esc(eq["tag"])}</h1><span class="desc">{esc(eq["descripcion"])}</span>{badge(r["cond"])}'
          '<div class="der"><button class="chico secundario" data-act="editar_eq">Editar</button>'
-         '<button class="chico peligro" data-act="borrar_eq">Eliminar</button></div></div>']
+         '<button class="chico peligro" data-act="borrar_eq">Eliminar</button></div></div>'] if cabecera else []
     if r["error"]:
         h.append(f'<div class="error">✕ No se pudo evaluar: {esc(r["error"])}</div>')
     chips = []
@@ -524,6 +526,110 @@ def vista_equipo(data, res, eq, cml_sel):
                                  f'<button class="chico peligro" data-act="del_adj" data-i="{i}">Quitar</button></li>'
                                  for i, a in enumerate(eq["adjuntos"])) + "</ul>"
     h.append(plegable(f"Documentación técnica ({len(eq.get('adjuntos', []))} PDF)", docs))
+    return "".join(h)
+
+
+def pagina_equipo(data, res, eq, cml_sel, sub="resumen"):
+    """Página de un equipo: migas de pan (ubicación técnica), encabezado y subnavegación Resumen | Diseño."""
+    r = res[eq["id"]]
+    u = eq["ubicacion"]
+    migas = ('<nav class="migas" aria-label="Ubicación técnica">'
+             f'<button data-act="tab" data-tab="planta">{esc(u["planta"])}</button><span>›</span>'
+             f'<button data-act="ir_area" data-area="{esc(u["area"])}" title="Ver los CML de esta área">{esc(u["area"])}</button><span>›</span>'
+             f'<span>{esc(u["sistema"])}</span><span>›</span><span aria-current="page">{esc(eq["tag"])}</span></nav>')
+    pestanas = "".join(
+        f'<button data-act="subvista" data-vista="{k}" class="{"activo" if sub == k else ""}" '
+        f'{"aria-current=page" if sub == k else ""}>{t}</button>'
+        for k, t in (("resumen", "Resumen y CML"), ("diseno", "Diseño y espesores")))
+    cab = (f'{migas}<div class="cabecera cabecera-eq"><div><span class="eyebrow">{FAMILIAS[eq["familia"]]} · '
+           f'{esc(eq["codigo_diseno"])} / {esc(eq["codigo_servicio"])}</span>'
+           f'<h1>{esc(eq["tag"])} {badge(r["cond"])}</h1><span class="desc">{esc(eq["descripcion"])}</span></div>'
+           '<div class="der"><button class="chico secundario" data-act="editar_eq">Editar</button>'
+           '<button class="chico peligro" data-act="borrar_eq">Eliminar</button></div></div>'
+           f'<div class="segmentado" role="tablist" aria-label="Vista del equipo">{pestanas}</div>')
+    cuerpo = vista_diseno(eq, r, cabecera=False) if sub == "diseno" else vista_equipo(data, res, eq, cml_sel, cabecera=False)
+    return cab + cuerpo
+
+
+def puntos_atencion(data, res):
+    """CML que requieren acción, del más grave al menos grave (bajo mínimo › vencida › alerta)."""
+    orden = {"bajo_minimo": 0, "vencida": 1, "alerta": 2}
+    filas = [fl for fl in filas_panel(data, res, {}) if fl["Condición"] in orden]
+    return sorted(filas, key=lambda fl: (orden[fl["Condición"]], fl.get("RL [años]") or 1e9))
+
+
+ICONO_FAMILIA = {
+    "tuberia": '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M6 34h12V14h24" fill="none" stroke="currentColor" stroke-width="3" '
+               'stroke-linecap="round" stroke-linejoin="round"/><path d="M12 30v8M30 10v8" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
+    "recipiente": '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="15" y="6" width="18" height="34" rx="9" fill="none" stroke="currentColor" '
+                  'stroke-width="3"/><path d="M24 2v4M24 40v6M18 44h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
+    "tanque": '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 16l16-8 16 8v24H8z" fill="none" stroke="currentColor" stroke-width="3" '
+              'stroke-linejoin="round"/><path d="M8 24h32M8 32h32M4 40h40" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
+}
+CODIGOS = {"tuberia": "ASME B31.3 · API 570", "recipiente": "ASME VIII-1 · API 510", "tanque": "API 650 · API 653"}
+
+
+def vista_inicio(data, res):
+    """Portada: qué es la app, qué requiere atención hoy y cómo se usa."""
+    filas = filas_panel(data, res, {})
+    atencion = puntos_atencion(data, res)
+    proximas = sorted(fl["Próxima inspección"] for fl in filas
+                      if fl["Próxima inspección"] and re.match(r"^\d{4}-", str(fl["Próxima inspección"]))
+                      and fl["Próxima inspección"] >= date.today().isoformat())
+    n_crit = sum(1 for fl in atencion if fl["Condición"] in ("bajo_minimo", "vencida"))
+    h = ['<section class="hero"><span class="eyebrow">Prototipo académico · MAN040-B</span>'
+         '<h1>Integridad de equipos estáticos,<br>en un solo lugar.</h1>'
+         '<p class="lead">Registra mediciones de espesor, calcula corrosión y vida remanente, programa la próxima inspección '
+         'según API 510, 570 y 653, y prioriza por riesgo con API RP 581.</p>'
+         '<div class="cta"><button data-act="tab" data-tab="planta">Ver estado de la planta</button>'
+         + ('<button class="secundario" data-act="ir_critico">Ir al punto más crítico</button>' if atencion else '')
+         + '</div></section>',
+         '<div class="stats">',
+         stat("Equipos", len(data["equipos"]), sub="3 familias", clase="destacado"),
+         stat("Puntos de monitoreo", len(filas), sub="CML / TML"),
+         f'<div class="stat estado" style="--c:{COLOR["bajo_minimo"] if n_crit else COLOR["normal"]}">'
+         f'<div class="l">Requieren acción</div><div class="v">{len(atencion)}</div>'
+         f'<div class="s">{n_crit} crítico(s) · {len(atencion) - n_crit} en alerta</div></div>',
+         stat("Próxima inspección", fecha_cl(proximas[0]) if proximas else "—", sub="programada"),
+         '</div>']
+
+    if atencion:
+        items = "".join(
+            f'<li class="fila-accion" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(fl["_eq"])}" data-cml="{esc(fl["_cml"])}">'
+            f'{badge(fl["Condición"])}<span class="fa-txt"><b>{esc(fl["CML"])}</b> · {esc(fl["Equipo"])}'
+            f'<small>{esc(fl.get("Componente", ""))} · t actual {f(fl.get("t_actual [mm]"))} mm · t mín {f(fl.get("t_min [mm]"))} mm</small></span>'
+            f'<span class="fa-ir">{"Inmediata" if fl["Condición"] == "bajo_minimo" else fecha_cl(fl["Próxima inspección"])} ›</span></li>'
+            for fl in atencion[:5])
+        h.append(f'<div class="card"><div class="card-cab"><h2>Requiere atención</h2>'
+                 f'<button class="chico secundario" data-act="tab" data-tab="planta">Ver todos los CML</button></div>'
+                 f'<ul class="lista-accion">{items}</ul></div>')
+    else:
+        h.append('<div class="card"><h2>Todo en orden</h2><p class="muted">Ningún CML bajo el mínimo, vencido ni en alerta.</p></div>')
+
+    tarjetas = []
+    for fam, nombre in FAMILIAS.items():
+        eqs = [e for e in data["equipos"] if e["familia"] == fam]
+        if not eqs:
+            continue
+        e = eqs[0]
+        n_cml = sum(len(x["cmls"]) for x in eqs)
+        tarjetas.append(
+            f'<div class="familia" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(e["id"])}" '
+            f'aria-label="Abrir {esc(e["tag"])}, {nombre}"><div class="familia-ico">{ICONO_FAMILIA[fam]}</div>'
+            f'<div class="familia-txt"><span class="eyebrow">{CODIGOS[fam]}</span><h3>{nombre}</h3>'
+            f'<p>{esc(e["tag"])} · {esc(e["descripcion"])}</p></div>'
+            f'<div class="familia-pie">{badge(res[e["id"]]["cond"])}<span class="muted">{n_cml} CML ›</span></div></div>')
+    h.append(f'<h2 class="titulo-seccion">Equipos del caso de estudio</h2><div class="familias">{"".join(tarjetas)}</div>')
+
+    pasos = [("Elige un equipo", "Desde Planta o Equipos. Verás su ubicación técnica, esquema y CML; se abre el más crítico."),
+             ("Revisa el CML", "Espesor actual, mínimo y de alerta, corrosión, vida remanente y la tendencia en el gráfico."),
+             ("Registra una medición", "Ingresa la lectura de UT: la condición y la próxima inspección se recalculan al instante."),
+             ("Evalúa el riesgo", "En Riesgo (RBI) ajusta consecuencias e inspecciones y observa la prioridad en la matriz.")]
+    h.append('<h2 class="titulo-seccion">Cómo se usa</h2><ol class="pasos">' + "".join(
+        f'<li><span class="paso-n">{i}</span><h3>{t}</h3><p>{d}</p></li>' for i, (t, d) in enumerate(pasos, 1)) + '</ol>')
+    h.append('<footer class="pie-inicio"><span>Cálculos verificados en <button class="enlace" data-act="tab" data-tab="validacion">Validación</button>'
+             ' · Normas y supuestos en <button class="enlace" data-act="tab" data-tab="acerca">Acerca</button></span>'
+             '<a href="https://github.com/Matiasgodoys1512/Trabajoestaticos" target="_blank" rel="noopener noreferrer">Repositorio en GitHub ↗</a></footer>')
     return "".join(h)
 
 
@@ -584,7 +690,7 @@ TOLERANCIA = {
 }
 
 
-def vista_diseno(eq, res_eq):
+def vista_diseno(eq, res_eq, cabecera=True):
     fam = eq["familia"]
     d = eq["diseno"]
     mat = MATERIALES[eq["material"]]
@@ -598,7 +704,8 @@ def vista_diseno(eq, res_eq):
             s_txt = f'{mat["nombre"]} · S({f(d["T_diseno_C"], 0)} °C) = {f(S, 1)} MPa ({f(S / 6.894757, 1)} ksi)'
         except ValueError as e:
             s_txt = f'<span class="fail">{esc(e)}</span>'
-    h = [f'<div class="cabecera"><h1>{esc(eq["tag"])}</h1><span class="desc">Condiciones de diseño · {FAMILIAS[fam]}</span></div>',
+    h = ([f'<div class="cabecera"><h1>{esc(eq["tag"])}</h1><span class="desc">Condiciones de diseño · {FAMILIAS[fam]}</span></div>']
+         if cabecera else []) + [
          f'<div class="card"><h2>Variables de diseño</h2><form class="f">{campos}</form>'
          f'<div class="info" style="margin-top:12px">{s_txt}&nbsp;<span class="muted">· {esc(mat["ref"])}</span></div>'
          '<div class="muted">Cambia un valor y presiona Enter o Tab: se recalcula todo el equipo.</div></div>']

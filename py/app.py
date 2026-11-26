@@ -23,14 +23,16 @@ CLAVE = "giee_proyecto_v1"
 LIMITES = {"importar": 25_000_000, "subir_img": 1_500_000, "subir_pdf": 3_000_000}
 FIRMAS = {"image/png": b"\x89PNG", "image/jpeg": b"\xff\xd8\xff", "application/pdf": b"%PDF"}
 FORM_ACCION = {"form_med": "add_med", "form_cml": "add_cml", "form_xy": "mover_cml", "form_eq": "guardar_eq"}
-E = {"data": None, "eq": None, "cml": None, "tab": "panel", "filtros": {}, "editando": None}
+E = {"data": None, "eq": None, "cml": None, "tab": "inicio", "sub": "resumen", "filtros": {}, "editando": None}
+VISTAS = ("inicio", "planta", "equipos", "rbi", "validacion", "acerca")
+_ruta = {"actual": None}
 _proxies = []  # referencias vivas a los proxies de eventos
 
 
 # ------------------------------------------------------------------ utilidades
 def attr(el, nombre):
     """Lee data-<nombre> sin lanzar error si no existe (en Pyodide un atributo ausente lanza AttributeError)."""
-    if el is None or not hasattr(el, "getAttribute"):
+    if not hay(el) or not hasattr(el, "getAttribute"):
         return None
     return el.getAttribute(f"data-{nombre}")
 
@@ -56,7 +58,7 @@ def cml_actual(eq):
 def leer_form(fid):
     form = document.getElementById(fid)
     out = {}
-    if form is None:
+    if not hay(form):
         return out
     for i in range(form.elements.length):
         el = form.elements.item(i)
@@ -94,30 +96,77 @@ async def cargar_demo():
     E["cml"] = None
 
 
+# ------------------------------------------------------------------ rutas (URL ↔ estado)
+def ruta_desde_estado():
+    """#/inicio · #/planta · #/equipos/<id>[/cml/<id>][/diseno] · #/rbi · #/validacion · #/acerca"""
+    t = E["tab"]
+    if t != "equipos" or not E["eq"]:
+        return f"#/{t}"
+    h = "#/equipos/" + window.encodeURIComponent(E["eq"])
+    if E["cml"]:
+        h += "/cml/" + window.encodeURIComponent(E["cml"])
+    if E["sub"] == "diseno":
+        h += "/diseno"
+    return h
+
+
+def estado_desde_ruta(h):
+    partes = [window.decodeURIComponent(x) for x in str(h or "").lstrip("#").strip("/").split("/") if x]
+    tab = partes[0] if partes and partes[0] in VISTAS else "inicio"
+    E["tab"], E["editando"] = tab, None
+    if tab == "equipos":
+        ids = {e["id"] for e in E["data"]["equipos"]}
+        if len(partes) > 1 and partes[1] in ids:
+            E["eq"] = partes[1]
+        E["cml"] = partes[partes.index("cml") + 1] if "cml" in partes[2:-1] else None
+        E["sub"] = "diseno" if "diseno" in partes[2:] else "resumen"
+
+
+def on_popstate(evt):
+    estado_desde_ruta(window.location.hash)
+    render(empujar=False)
+
+
+def ir_a_lo_critico():
+    """Lleva al CML más crítico de toda la planta (acción principal de la portada)."""
+    res = ui.evaluar_todo(E["data"])
+    fl = ui.puntos_atencion(E["data"], res)
+    if fl:
+        E["tab"], E["eq"], E["cml"], E["sub"], E["editando"] = "equipos", fl[0]["_eq"], fl[0]["_cml"], "resumen", None
+
+
 # ------------------------------------------------------------------ render
-def render():
+def render(empujar=True):
     try:
         data = E["data"]
         res = ui.evaluar_todo(data)
         if not eq_actual():
             E["eq"] = data["equipos"][0]["id"] if data["equipos"] else None
             E["cml"] = None
-        document.getElementById("sidebar").innerHTML = ui.sidebar(data, res, E["eq"], E["filtros"])
-        for b in document.querySelectorAll("#tabs button"):
-            activo = attr(b, "tab") == E["tab"] and E["editando"] is None
-            b.classList.toggle("activo", activo)
-            b.setAttribute("aria-selected", "true" if activo else "false")
         eq = eq_actual()
         t = E["tab"]
+        # Al abrir un equipo se muestra de inmediato su CML más crítico (menos clics, foco en lo importante)
+        if t == "equipos" and eq and eq["cmls"] and not any(c["id"] == E["cml"] for c in eq["cmls"]):
+            E["cml"] = ui.cml_gobernante(eq, res[eq["id"]])[0]["id"] if not res[eq["id"]]["error"] else eq["cmls"][0]["id"]
+        lateral = t == "equipos"
+        document.getElementById("app").classList.toggle("con-lateral", lateral)
+        document.getElementById("sidebar").innerHTML = ui.sidebar(data, res, E["eq"], E["filtros"]) if lateral else ""
+        for b in document.querySelectorAll("#tabs button"):
+            activo = attr(b, "tab") == t
+            b.classList.toggle("activo", activo)
+            if activo:
+                b.setAttribute("aria-current", "page")
+            else:
+                b.removeAttribute("aria-current")
         sin = '<div class="info">No hay equipos. Crea uno con «+ Nuevo equipo».</div>'
         if E["editando"] is not None:
             html = ui.form_equipo(None if E["editando"] == "nuevo" else eq)
-        elif t == "panel":
+        elif t == "inicio":
+            html = ui.vista_inicio(data, res)
+        elif t == "planta":
             html = ui.panel(data, res, E["filtros"])
-        elif t == "equipo":
-            html = ui.vista_equipo(data, res, eq, E["cml"]) if eq else sin
-        elif t == "diseno":
-            html = ui.vista_diseno(eq, res[eq["id"]]) if eq else sin
+        elif t == "equipos":
+            html = ui.pagina_equipo(data, res, eq, E["cml"], E["sub"]) if eq else sin
         elif t == "rbi":
             html = ui.vista_rbi(data, res)
         elif t == "validacion":
@@ -125,6 +174,16 @@ def render():
         else:
             html = ui.vista_acerca()
         document.getElementById("contenido").innerHTML = ui.subindices(html)
+        ruta = ruta_desde_estado()
+        if ruta != window.location.hash:
+            if empujar and _ruta["actual"] is not None:
+                window.history.pushState(None, "", ruta)
+            else:
+                window.history.replaceState(None, "", ruta)
+        vista = ruta.split("/cml/")[0].split("/diseno")[0]
+        if _ruta["actual"] is not None and vista != _ruta["actual"]:
+            window.scrollTo(0, 0)
+        _ruta["actual"] = vista
     except Exception as e:  # noqa: BLE001 — límite de error: nunca dejar la pantalla en blanco
         window.console.error(traceback.format_exc())
         document.getElementById("contenido").innerHTML = (
@@ -144,13 +203,28 @@ def accion_click(el):
 
     if act == "tab":
         E["tab"], E["editando"] = attr(el, "tab"), None
+        if E["tab"] == "equipos":
+            E["sub"] = "resumen"
         render()
         return
     if act == "sel_eq":
-        E["eq"], E["editando"] = attr(el, "id"), None
+        nuevo_eq = attr(el, "id")
+        if nuevo_eq != E["eq"]:
+            E["sub"] = "resumen"
+        E["eq"], E["editando"], E["tab"] = nuevo_eq, None, "equipos"
         E["cml"] = attr(el, "cml") or None
-        if E["tab"] in ("panel", "validacion", "acerca", "rbi"):
-            E["tab"] = "equipo"
+        render()
+        return
+    if act == "subvista":
+        E["sub"] = attr(el, "vista")
+        render()
+        return
+    if act == "ir_area":
+        E["tab"], E["filtros"], E["editando"] = "planta", {"area": attr(el, "area")}, None
+        render()
+        return
+    if act == "ir_critico":
+        ir_a_lo_critico()
         render()
         return
     if act == "sel_cml":
@@ -177,7 +251,7 @@ def accion_click(el):
             asyncio.ensure_future(restablecer())
         return
     if act == "nuevo_eq":
-        E["editando"] = "nuevo"
+        E["editando"], E["tab"] = "nuevo", "equipos"
         render()
         return
     if act == "editar_eq":
@@ -338,7 +412,7 @@ def guardar_equipo(nuevo):
                        "sistema": proyecto.texto(d.get("sistema"), 80) or "Sin sistema"}
     eq["operacion"] = {"P_MPa": proyecto.numero(d.get("P_op")) or 0.0, "T_C": proyecto.numero(d.get("T_op")) or 20.0}
     E["eq"], E["cml"], E["editando"] = eq["id"], None, None
-    E["tab"] = "diseno" if nuevo else "equipo"
+    E["tab"], E["sub"] = "equipos", ("diseno" if nuevo else "resumen")
     toast("Equipo guardado." + (" Completa ahora sus datos de diseño." if nuevo else ""))
     return True
 
@@ -393,6 +467,7 @@ def accion_change(el):
         else:
             return
     elif act in ("importar", "subir_img", "subir_pdf"):
+        cerrar_menus()
         asyncio.ensure_future(cargar_archivo(el, act))
         return
     else:
@@ -459,7 +534,7 @@ async def exportar():
 
 async def restablecer():
     await cargar_demo()
-    E["tab"], E["filtros"], E["editando"] = "panel", {}, None
+    E["tab"], E["filtros"], E["editando"] = "inicio", {}, None
     cambio()
     toast("Caso demostrativo restablecido.")
 
@@ -473,9 +548,24 @@ def _seguro(fn, el):
         toast(f"Error inesperado: {e}", 6000, True)
 
 
+def hay(x):
+    """True si un resultado del DOM existe (en Pyodide, null puede llegar como None o como JsNull)."""
+    return x is not None and type(x).__name__ != "JsNull"
+
+
+def cerrar_menus():
+    for m in document.querySelectorAll("details.menu[open]"):
+        m.removeAttribute("open")
+
+
 def on_click(evt):
+    menu = evt.target.closest("details.menu")
+    en_panel = hay(evt.target.closest(".menu-panel"))
+    # clic fuera del menú o en una opción → cerrar (salvo "Importar", que se cierra al elegir el archivo)
+    if not hay(menu) or (en_panel and not hay(evt.target.closest("label"))):
+        cerrar_menus()
     el = evt.target.closest("[data-act]")
-    if el is not None and el.tagName not in ("SELECT", "INPUT", "TEXTAREA"):
+    if hay(el) and el.tagName not in ("SELECT", "INPUT", "TEXTAREA"):
         evt.preventDefault()
         _seguro(accion_click, el)
 
@@ -516,6 +606,10 @@ async def iniciar():
         await cargar_demo()
     for tipo, fn in (("click", on_click), ("change", on_change), ("submit", on_submit), ("keydown", on_keydown)):
         registrar(tipo, fn)
+    p = create_proxy(on_popstate)
+    _proxies.append(p)
+    window.addEventListener("popstate", p)
+    estado_desde_ruta(window.location.hash)
     document.getElementById("cargando").hidden = True
     document.getElementById("app").hidden = False
     render()

@@ -59,18 +59,65 @@ def recorrer(url, salida):
         print("App cargada")
         cap = lambda n: pg.screenshot(path=str(salida / f"{n}.png"), full_page=True)  # noqa: E731
 
+        def ir(tab):
+            pg.locator(f'#tabs [data-tab="{tab}"]').click()
+            pg.wait_for_timeout(300)
+
+        def menu(act):
+            pg.locator("details.menu > summary").click()
+            pg.locator(f'.menu-panel [data-act="{act}"]').click()
+
+        def abrir_equipo(tag):
+            ir("equipos")
+            pg.locator(".eq-item", has_text=tag).click()
+            pg.wait_for_timeout(300)
+
+        def inicio():
+            assert "#/inicio" in pg.url, f"no abrió en Inicio: {pg.url}"
+            expect(pg.locator(".hero h1")).to_be_visible()
+            assert pg.locator(".familia").count() == 3, "faltan las 3 familias en la portada"
+            assert pg.locator(".fila-accion").count() >= 3, "faltan los puntos que requieren atención"
+            assert not pg.locator("#sidebar").is_visible(), "la barra lateral no debe verse en Inicio"
+            cap("00_inicio")
+        paso("Abre en una portada (Inicio) con familias y puntos críticos", inicio)
+
+        def critico():
+            pg.locator('[data-act="ir_critico"]').click()
+            pg.wait_for_timeout(500)
+            assert "CML-201-03" in pg.url, f"no llevó al CML crítico: {pg.url}"
+            expect(pg.locator(".migas")).to_be_visible()
+            pg.go_back()
+            pg.wait_for_timeout(600)
+            assert "#/inicio" in pg.url and pg.locator(".hero").count() == 1, "el botón Atrás no volvió a Inicio"
+        paso("«Ir al punto más crítico» y botón Atrás del navegador", critico)
+
         def panel():
+            ir("planta")
             expect(pg.locator(".stat").first).to_be_visible()
-            assert pg.locator("tr.click").count() >= 9, "faltan filas en el panel"
+            assert pg.locator("tr.click").count() >= 9, "faltan filas en Planta"
+            pg.select_option('.filtros select[data-campo="familia"]', "tanque")
+            pg.wait_for_timeout(500)
+            assert pg.locator("tr.click").count() == 3, "el filtro por familia no funcionó"
+            pg.locator('[data-act="limpiar_filtros"]').click()
+            pg.wait_for_timeout(400)
             cap("01_panel")
-        paso("Panel muestra las 3 familias y sus CML", panel)
+        paso("Planta: tabla de CML con filtros junto a la tabla", panel)
 
         def equipo():
-            pg.locator(".eq-item", has_text="V-201").click()
+            abrir_equipo("V-201")
+            assert pg.locator(".chip.sel").get_attribute("data-id") == "CML-201-03", "no abrió el CML más crítico por defecto"
             pg.locator('.chip[data-id="CML-201-02"]').click()
             expect(pg.locator(".grafico img")).to_be_visible()
             cap("02_equipo_cml")
-        paso("Seleccionar equipo y CML con esquema y gráfico", equipo)
+        paso("Equipo: abre el CML crítico; se puede elegir otro", equipo)
+
+        def enlace_directo():
+            url = pg.url
+            pg.goto("about:blank")
+            pg.goto(url)
+            pg.wait_for_selector("#app:not([hidden])", timeout=180_000)
+            assert pg.locator(".chip.sel").get_attribute("data-id") == "CML-201-02", "el enlace no restauró el CML"
+        paso("La URL lleva directo al equipo y CML (enlace compartible)", enlace_directo)
 
         def medicion():
             antes = pg.locator(".stat .v").nth(0).inner_text()
@@ -83,7 +130,8 @@ def recorrer(url, salida):
         paso("Agregar medición y recalcular", medicion)
 
         def diseno():
-            pg.locator('#tabs [data-tab="diseno"]').click()
+            pg.locator('[data-act="subvista"][data-vista="diseno"]').click()
+            pg.wait_for_timeout(300)
             campo = pg.locator('input[data-campo="P_diseno_MPa"]')
             antes = pg.locator(".esc-fila .val").nth(5).inner_text()
             campo.fill("2.0")
@@ -99,7 +147,7 @@ def recorrer(url, salida):
         paso("Cambiar variable de diseño y ver efecto en espesor", diseno)
 
         def rbi():
-            pg.locator('#tabs [data-tab="rbi"]').click()
+            ir("rbi")
             antes = pg.locator(".stat").nth(3).inner_text()
             campo = pg.locator('input[data-campo="C_E"]')
             campo.fill("5000000")
@@ -111,7 +159,7 @@ def recorrer(url, salida):
         paso("Modificar consecuencia y ver cambio de riesgo", rbi)
 
         def validacion():
-            pg.locator('#tabs [data-tab="validacion"]').click()
+            ir("validacion")
             txt = pg.locator(".stat").first.inner_text()
             assert "/" in txt
             n, tot = txt.split("\n")[1].split("/")
@@ -120,52 +168,50 @@ def recorrer(url, salida):
         paso("Validación: todos los casos OK", validacion)
 
         def tanque():
-            pg.locator(".eq-item", has_text="TK-301").click()
-            pg.locator('#tabs [data-tab="equipo"]').click()
+            abrir_equipo("TK-301")
             pg.locator('.chip[data-id="CML-301-01"]').click()
             expect(pg.locator(".grafico img")).to_be_visible()
             cap("07_tanque")
-            pg.locator('#tabs [data-tab="diseno"]').click()
+            pg.locator('[data-act="subvista"][data-vista="diseno"]').click()
+            pg.wait_for_timeout(300)
             cap("08_tanque_diseno")
         paso("Tanque: CML y diseño por virola", tanque)
 
         def exportar_importar():
-            pg.locator('#tabs [data-tab="panel"]').click()
             with pg.expect_download() as d:
-                pg.locator('[data-act="exportar"]').click()
+                menu("exportar")
             ruta = salida / "proyecto_exportado.json"
             d.value.save_as(ruta)
             assert ruta.stat().st_size > 10_000
-            pg.locator('[data-act="restablecer"]').click()
+            assert pg.locator("details.menu[open]").count() == 0, "el menú no se cerró tras elegir una opción"
+            menu("restablecer")
             pg.wait_for_timeout(1500)
+            assert "#/inicio" in pg.url
             pg.set_input_files('input[data-act="importar"]', str(ruta))
             pg.wait_for_timeout(1500)
             assert "importado" in pg.locator("#toast").inner_text().lower()
             cap("09_importado")
-        paso("Exportar, restablecer e importar proyecto", exportar_importar)
+        paso("Menú Proyecto: exportar, restablecer e importar", exportar_importar)
 
         def adjuntos_usuario():
             pdf = salida / "informe_prueba.pdf"
             pdf.write_bytes(b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n")
-            pg.locator(".eq-item", has_text="V-201").click()
-            pg.locator('#tabs [data-tab="equipo"]').click()
+            abrir_equipo("V-201")
             pg.set_input_files('input[data-act="subir_img"]', str(RAIZ / "data" / "img" / "tanque_TK301.png"))
             pg.wait_for_timeout(1200)
             pg.set_input_files('input[data-act="subir_pdf"]', str(pdf))
             pg.wait_for_timeout(1200)
             with pg.expect_download() as d:
-                pg.locator('[data-act="exportar"]').click()
+                menu("exportar")
             ruta = salida / "proyecto_con_adjuntos.json"
             d.value.save_as(ruta)
-            pg.locator('[data-act="restablecer"]').click()
+            menu("restablecer")
             pg.wait_for_timeout(1500)
-            pg.locator(".eq-item", has_text="V-201").click()
-            pg.locator('#tabs [data-tab="equipo"]').click()
+            abrir_equipo("V-201")
             assert pg.locator("text=informe_prueba.pdf").count() == 0, "el PDF no debía estar tras restablecer"
             pg.set_input_files('input[data-act="importar"]', str(ruta))
             pg.wait_for_timeout(1500)
-            pg.locator(".eq-item", has_text="V-201").click()
-            pg.locator('#tabs [data-tab="equipo"]').click()
+            abrir_equipo("V-201")
             assert pg.locator("text=informe_prueba.pdf").count() == 1, "el PDF no se recuperó al importar"
             src = pg.locator(".esquema img").get_attribute("src")
             assert src.startswith("data:image/png;base64,"), "el esquema subido no se recuperó"
@@ -175,10 +221,12 @@ def recorrer(url, salida):
         def persistencia():
             pg.reload()
             pg.wait_for_selector("#app:not([hidden])", timeout=180_000)
+            ir("planta")
             assert pg.locator("tr.click").count() >= 9
         paso("Recuperar desde almacenamiento del navegador", persistencia)
 
         def nuevo_equipo():
+            ir("equipos")
             pg.locator('[data-act="nuevo_eq"]').click()
             pg.fill('#form_eq input[name="tag"]', "2\"-AG-999")
             pg.fill('#form_eq input[name="area"]', "Área 900 - Pruebas")
@@ -187,15 +235,12 @@ def recorrer(url, salida):
             pg.wait_for_timeout(800)
             assert pg.locator(".eq-item", has_text="AG-999").count() == 1, pg.locator("#toast").inner_text()
             cap("10_nuevo_equipo")
-            # Enter en un campo envía el formulario de medición (sin recargar la página)
-            pg.locator('#tabs [data-tab="panel"]').click()
-            pg.locator(".eq-item", has_text="TK-301").click()
+            abrir_equipo("TK-301")
             pg.locator('.chip[data-id="CML-301-03"]').click()
             pg.fill('#form_med input[name="espesor"]', "5.70")
             pg.press('#form_med input[name="espesor"]', "Enter")
             pg.wait_for_timeout(800)
             assert "agregada" in pg.locator("#toast").inner_text().lower(), "Enter no envió el formulario"
-            assert pg.locator(".badge", has_text="Información insuficiente").count() == 0 or True
         paso("Crear equipo nuevo y enviar formulario con Enter", nuevo_equipo)
 
         def import_malicioso():
@@ -209,17 +254,19 @@ def recorrer(url, salida):
         paso("Rechazar proyecto importado con contenido inseguro", import_malicioso)
 
         def teclado():
+            ir("equipos")
             pg.locator(".eq-item", has_text="V-201").focus()
             pg.keyboard.press("Enter")
             pg.wait_for_timeout(500)
             assert "V-201" in pg.locator(".cabecera h1").inner_text()
         paso("Navegación con teclado", teclado)
-        _ = None
 
         def movil():
             pg.set_viewport_size({"width": 390, "height": 844})
-            pg.locator('#tabs [data-tab="panel"]').click()
-            cap("11_movil")
+            ir("inicio")
+            cap("11_movil_inicio")
+            ir("planta")
+            cap("12_movil_planta")
         paso("Vista móvil", movil)
         nav.close()
 

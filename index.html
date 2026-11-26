@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Prototipo académico de gestión de integridad de equipos estáticos: CML/TML, corrosión, vida remanente, próxima inspección y RBI (API 510/570/653, API RP 581).">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <meta name="theme-color" content="#12372a">
+  <meta name="theme-color" content="#fbfbfd">
   <title>Gestión de Integridad · Equipos Estáticos</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%233a8a64'/%3E%3Ctext x='16' y='21' font-family='Arial' font-size='13' font-weight='700' fill='white' text-anchor='middle'%3EGI%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f7a4d'/%3E%3Ctext x='16' y='21' font-family='Arial' font-size='13' font-weight='700' fill='white' text-anchor='middle'%3EGI%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="https://pyscript.net/releases/2025.11.1/core.css"
         integrity="sha384-C7Vo5fjeYiyN27fdJgeiteaUwrLVW0+I9EbpT1kBxsxac8+kxV5zYrLayugNSu1q" crossorigin="anonymous">
@@ -17,40 +17,53 @@
 </head>
 <body>
   <a class="saltar" href="#contenido">Saltar al contenido</a>
+
   <header class="topbar">
-    <div class="marca">
-      <div class="logo" aria-hidden="true">GI</div>
-      <div><strong>Gestión de Integridad · Equipos Estáticos</strong><span class="sub">Prototipo académico MAN040-B</span></div>
-    </div>
+    <a class="marca" href="#/inicio" data-act="tab" data-tab="inicio" aria-label="Inicio">
+      <span class="logo" aria-hidden="true">GI</span>
+      <span><strong>Gestión de Integridad</strong><span class="sub">Equipos estáticos · MAN040-B</span></span>
+    </a>
+
+    <nav class="nav" id="tabs" aria-label="Secciones principales">
+      <button data-act="tab" data-tab="inicio">Inicio</button>
+      <button data-act="tab" data-tab="planta">Planta</button>
+      <button data-act="tab" data-tab="equipos">Equipos</button>
+      <button data-act="tab" data-tab="rbi">Riesgo (RBI)</button>
+      <button data-act="tab" data-tab="validacion">Validación</button>
+      <button data-act="tab" data-tab="acerca">Acerca</button>
+    </nav>
+
     <div class="acciones">
-      <span id="estado-guardado" class="estado-guardado" aria-live="polite"></span>
-      <button data-act="guardar" class="primario" title="Guardar en este navegador">Guardar</button>
-      <button data-act="exportar" title="Descargar el proyecto completo (JSON)">Exportar</button>
-      <label class="boton" title="Cargar un proyecto exportado (JSON)">Importar<input type="file" accept=".json,application/json" data-act="importar" hidden></label>
-      <button data-act="exportar_csv" title="Descargar el resumen de CML (CSV)">CSV</button>
-      <button data-act="restablecer" title="Volver al caso demostrativo">Restablecer demo</button>
+      <span id="estado-guardado" class="estado-guardado" aria-live="polite" title="Los cambios se guardan automáticamente en este navegador"></span>
+      <details class="menu">
+        <summary aria-label="Opciones del proyecto">Proyecto</summary>
+        <div class="menu-panel" role="menu">
+          <button role="menuitem" data-act="guardar">Guardar ahora<small>En este navegador</small></button>
+          <button role="menuitem" data-act="exportar">Exportar proyecto<small>Archivo JSON con esquemas y PDF</small></button>
+          <label class="item" role="menuitem">Importar proyecto<small>Cargar un JSON exportado</small>
+            <input type="file" accept=".json,application/json" data-act="importar" hidden></label>
+          <button role="menuitem" data-act="exportar_csv">Exportar resumen CSV<small>Tabla de CML para Excel</small></button>
+          <hr>
+          <button role="menuitem" class="peligro" data-act="restablecer">Restablecer caso demo<small>Descarta los cambios no exportados</small></button>
+        </div>
+      </details>
     </div>
   </header>
 
   <noscript><div class="error" style="margin:24px">Esta aplicación necesita JavaScript habilitado (ejecuta Python en el navegador con PyScript).</div></noscript>
 
   <div id="cargando" class="cargando" role="status" aria-live="polite">
-    <div class="spinner" aria-hidden="true"></div>
-    <p>Cargando Python en el navegador (Pyodide)…<br><small>La primera carga puede tardar 20–40 s; luego queda en caché.</small></p>
-    <p id="carga-lenta" class="muted" hidden>La carga está tardando más de lo normal. Revisa la conexión a internet y recarga la página (Ctrl + F5).</p>
+    <span class="eyebrow">Prototipo académico · MAN040-B</span>
+    <h1>Integridad de equipos estáticos,<br>en un solo lugar.</h1>
+    <p class="lead">Mediciones de espesor, corrosión, vida remanente, próxima inspección y riesgo, según ASME y API.</p>
+    <div class="progreso"><div class="spinner" aria-hidden="true"></div><span>Preparando el motor de cálculo en Python…</span></div>
+    <p class="muted">La primera visita tarda 20–40 s porque el navegador descarga Python; las siguientes son inmediatas.</p>
+    <p id="carga-lenta" class="muted" hidden>Está tardando más de lo normal. Revisa la conexión y recarga la página (Ctrl + F5).</p>
   </div>
 
   <div class="layout" id="app" hidden>
-    <aside id="sidebar" aria-label="Equipos y filtros"></aside>
+    <aside id="sidebar" aria-label="Equipos de la planta"></aside>
     <main>
-      <nav class="tabs" id="tabs" aria-label="Secciones">
-        <button data-act="tab" data-tab="panel">Panel</button>
-        <button data-act="tab" data-tab="equipo">Equipo</button>
-        <button data-act="tab" data-tab="diseno">Diseño</button>
-        <button data-act="tab" data-tab="rbi">RBI</button>
-        <button data-act="tab" data-tab="validacion">Validación</button>
-        <button data-act="tab" data-tab="acerca">Alcance</button>
-      </nav>
       <section id="contenido" tabindex="-1"></section>
     </main>
   </div>

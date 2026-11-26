@@ -367,6 +367,10 @@ def accion_click(el):
         E["tab"], E["filtros"], E["editando"] = "planta", {"area": attr(el, "area")}, None
         render()
         return
+    if act == "ir_familia":
+        E["tab"], E["filtros"], E["editando"] = "planta", {"familia": attr(el, "familia")}, None
+        render()
+        return
     if act == "ir_critico":
         ir_a_lo_critico()
         render()
@@ -762,17 +766,24 @@ def hay(x):
     return x is not None and type(x).__name__ != "JsNull"
 
 
-def cerrar_menus():
-    for m in document.querySelectorAll("details.menu[open]"):
-        m.removeAttribute("open")
+MENUS = "details.menu, details.fam-menu"
+
+
+def cerrar_menus(excepto=None):
+    for m in document.querySelectorAll("details.menu[open], details.fam-menu[open]"):
+        if not (hay(excepto) and excepto.isSameNode(m)):
+            m.removeAttribute("open")
 
 
 def on_click(evt):
-    menu = evt.target.closest("details.menu")
-    en_panel = hay(evt.target.closest(".menu-panel"))
-    # clic fuera del menú o en una opción → cerrar (salvo "Importar", que se cierra al elegir el archivo)
+    menu = evt.target.closest(MENUS)
+    en_panel = hay(evt.target.closest(".menu-panel, .fam-menu-panel"))
+    # clic fuera de un menú o en una opción → cerrar (salvo "Importar", que se cierra al elegir el archivo);
+    # al abrir un menú se cierran los demás
     if not hay(menu) or (en_panel and not hay(evt.target.closest("label"))):
         cerrar_menus()
+    else:
+        cerrar_menus(excepto=menu)
     el = evt.target.closest("[data-act]")
     if hay(el) and el.tagName not in ("SELECT", "INPUT", "TEXTAREA"):
         evt.preventDefault()
@@ -789,6 +800,9 @@ def on_submit(evt):
 
 
 def on_keydown(evt):
+    if evt.key == "Escape":
+        cerrar_menus()
+        return
     if evt.key in ("Enter", " ") and evt.target.getAttribute("role") == "button":
         evt.preventDefault()
         _seguro(accion_click, evt.target)

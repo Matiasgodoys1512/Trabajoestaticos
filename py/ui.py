@@ -925,28 +925,53 @@ ICONO_KPI = {
 }
 
 
-def _marcadores(e, r, puntos):
-    """Puntos de monitoreo sobre la ilustración: color = condición real; los que requieren acción laten."""
+PLURAL = {"tuberia": "Tuberías", "recipiente": "Recipientes", "tanque": "Tanques"}
+DESC_FAMILIA = {"tuberia": "Circuitos y tramos rectos de cañería de proceso.",
+                "recipiente": "Envolventes cilíndricas de recipientes a presión.",
+                "tanque": "Manto de tanques de almacenamiento atmosféricos, por virola."}
+ORDEN_COND = {"error": -1, "bajo_minimo": 0, "vencida": 1, "alerta": 2, "insuficiente": 3, "normal": 4}
+
+
+def peor_condicion(conds):
+    conds = list(conds)
+    return min(conds, key=lambda c: ORDEN_COND.get(c, 5)) if conds else "insuficiente"
+
+
+def _marcadores(eqs, res, puntos):
+    """Un punto por equipo de la familia (color = su peor condición); los que requieren acción laten."""
     h = []
-    for c, (x, y) in zip(e["cmls"], puntos):
-        cond = r["cmls"].get(c["id"], {}).get("condicion", "insuficiente")
-        late = '<circle class="ilu-pulso" cx="{0}" cy="{1}" r="9" fill="{2}"/>'.format(x, y, COLOR[cond]) if cond in AVISO else ""
+    for e, (x, y) in zip(eqs, puntos):
+        cond = res[e["id"]]["cond"]
+        late = f'<circle class="ilu-pulso" cx="{x}" cy="{y}" r="9" fill="{COLOR[cond]}"/>' if cond in AVISO else ""
         h.append(f'{late}<circle cx="{x}" cy="{y}" r="7" fill="{COLOR[cond]}" stroke="#fff" stroke-width="2.5">'
-                 f'<title>{esc(c["id"])} · {CONDICION[cond]}</title></circle>')
+                 f'<title>{esc(e["tag"])} · {CONDICION[cond]}</title></circle>')
     return "".join(h)
 
 
-def _rotulo(x, y, e, r):
-    cond = r["cond"]
-    ancho = 22 + 7.2 * len(e["tag"])
+def _rotulo(x, y, texto, cond):
+    ancho = 22 + 7.2 * len(texto)
     return (f'<g transform="translate({x - ancho / 2:.0f},{y})"><rect width="{ancho:.0f}" height="26" rx="13" fill="#fff" '
             f'stroke="rgba(0,0,0,.08)"/><circle cx="13" cy="13" r="4.5" fill="{COLOR[cond]}"/>'
-            f'<text x="23" y="17.5" font-size="12.5" font-weight="600" fill="#1d1d1f">{esc(e["tag"])}</text></g>')
+            f'<text x="23" y="17.5" font-size="12.5" font-weight="600" fill="#1d1d1f">{esc(texto)}</text></g>')
 
 
 def ilustracion_planta(data, res):
     """Escena esquemática (sin escala): bomba → línea → separador → rack → tanque, con los CML reales del caso."""
-    fam = {f: next((e for e in data["equipos"] if e["familia"] == f), None) for f in FAMILIAS}
+    fam = {f: [e for e in data["equipos"] if e["familia"] == f] for f in FAMILIAS}
+
+    def grupo(f):
+        """Atributos del dibujo de una familia: abre Planta filtrada por esa familia (si tiene equipos)."""
+        if not fam[f]:
+            return '<g class="ilu-eq vacio">'
+        return (f'<g class="ilu-eq" role="button" tabindex="0" data-act="ir_familia" data-familia="{f}" '
+                f'aria-label="{PLURAL[f]}: {len(fam[f])} equipo(s). Ver en Planta">')
+
+    def extra(f, puntos, x, y):
+        eqs = fam[f]
+        if not eqs:
+            return ""
+        cond = peor_condicion(res[e["id"]]["cond"] for e in eqs)
+        return _marcadores(eqs, res, puntos) + _rotulo(x, y, f"{PLURAL[f]} · {len(eqs)}", cond)
     g = ['<svg class="ilu" viewBox="0 0 1000 320" role="img" aria-label="Esquema de la planta con el estado de sus puntos de monitoreo">',
          '<defs><linearGradient id="ilu-suelo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e7efe9"/>'
          '<stop offset="1" stop-color="#e7efe9" stop-opacity="0"/></linearGradient>'
@@ -957,33 +982,32 @@ def ilustracion_planta(data, res):
          '<rect x="0" y="268" width="1000" height="52" fill="url(#ilu-suelo)"/><path d="M20 268H980" stroke="#c9d6cd" stroke-width="2"/>',
          # rack de cañerías
          '<g stroke="#b9c4bd" stroke-width="4" stroke-linecap="round"><path d="M560 268V118M690 268V118M545 118H705M545 150H705"/></g>']
-    t, v, k = fam["tuberia"], fam["recipiente"], fam["tanque"]
     # bomba + línea de descarga
-    g.append('<g class="ilu-eq" ' + (f'role="button" tabindex="0" data-act="sel_eq" data-id="{esc(t["id"])}" aria-label="Abrir {esc(t["tag"])}"' if t else "") + '>'
+    g.append(grupo("tuberia") +
              '<rect x="60" y="226" width="78" height="42" rx="8" fill="#eaf5ef" stroke="#1f7a4d" stroke-width="2.5"/>'
              '<circle cx="99" cy="226" r="24" fill="#fff" stroke="#1f7a4d" stroke-width="2.5"/><circle cx="99" cy="226" r="8" fill="#1f7a4d"/>'
              '<path d="M123 226H250V150H392" fill="none" stroke="#1f7a4d" stroke-width="16" stroke-linejoin="round"/>'
              '<path d="M123 226H250V150H392" fill="none" stroke="#e9f6ef" stroke-width="10" stroke-linejoin="round"/>'
              '<path d="M180 214v24M300 138v24M360 138v24" stroke="#1f7a4d" stroke-width="4"/>'
              '<path d="M200 234v34M310 158v110M190 268h20M300 268h20" stroke="#b9c4bd" stroke-width="3" stroke-linecap="round"/>'
-             + (_marcadores(t, res[t["id"]], [(165, 226), (225, 226), (250, 190), (330, 150)]) + _rotulo(190, 168, t, res[t["id"]]) if t else "")
+             + extra("tuberia", [(165, 226), (225, 226), (250, 190), (330, 150)], 190, 168)
              + '</g>')
     # separador vertical
-    g.append('<g class="ilu-eq" ' + (f'role="button" tabindex="0" data-act="sel_eq" data-id="{esc(v["id"])}" aria-label="Abrir {esc(v["tag"])}"' if v else "") + '>'
+    g.append(grupo("recipiente") +
              '<path d="M398 72Q398 34 445 34T492 72V214Q492 252 445 252T398 214Z" fill="url(#ilu-rec)" stroke="#0e6f8f" stroke-width="3"/>'
              '<path d="M398 120h94M398 168h94" stroke="#0e6f8f" stroke-width="1.5" stroke-dasharray="5 5" opacity=".6"/>'
              '<path d="M445 34V14M445 252v16M412 246l-8 22M478 246l8 22" stroke="#0e6f8f" stroke-width="3" stroke-linecap="round"/>'
              '<path d="M445 14H560V118" fill="none" stroke="#0e6f8f" stroke-width="7" stroke-linejoin="round"/>'
-             + (_marcadores(v, res[v["id"]], [(445, 96), (445, 144), (445, 196), (420, 120)]) + _rotulo(445, 278, v, res[v["id"]]) if v else "")
+             + extra("recipiente", [(445, 96), (445, 144), (445, 196), (420, 120)], 445, 278)
              + '</g>')
     # línea por el rack hacia el tanque
     g.append('<path d="M560 118H745V150" fill="none" stroke="#0e6f8f" stroke-width="7" stroke-linejoin="round"/>')
     # tanque atmosférico
-    g.append('<g class="ilu-eq" ' + (f'role="button" tabindex="0" data-act="sel_eq" data-id="{esc(k["id"])}" aria-label="Abrir {esc(k["tag"])}"' if k else "") + '>'
+    g.append(grupo("tanque") +
              '<path d="M735 150L840 112L945 150V268H735Z" fill="url(#ilu-tk)" stroke="#b5651d" stroke-width="3" stroke-linejoin="round"/>'
              '<path d="M735 150H945M735 189H945M735 228H945" stroke="#b5651d" stroke-width="1.5" opacity=".55"/>'
              '<path d="M755 268L800 150" stroke="#b5651d" stroke-width="3"/><path d="M765 268L810 150" stroke="#b5651d" stroke-width="1.5" stroke-dasharray="3 5"/>'
-             + (_marcadores(k, res[k["id"]], [(880, 248), (880, 208), (880, 170), (910, 208)]) + _rotulo(840, 76, k, res[k["id"]]) if k else "")
+             + extra("tanque", [(880, 248), (880, 208), (880, 170), (910, 208)], 840, 76)
              + '</g>')
     g.append('</svg>')
     return "".join(g)
@@ -1013,7 +1037,7 @@ def vista_inicio(data, res):
          + ('<button class="secundario" data-act="ir_critico">Ir al punto más crítico</button>' if atencion else '')
          + '</div></div>',
          f'<figure class="ilu-marco">{ilustracion_planta(data, res)}'
-         f'<figcaption><span class="ilu-ayuda">Esquema sin escala · cada punto es un CML con su condición real · clic en un equipo para abrirlo</span>'
+         f'<figcaption><span class="ilu-ayuda">Esquema sin escala · cada punto es un equipo con su condición (la peor de sus CML) · clic en una familia para verla en Planta</span>'
          f'<span class="ilu-leyenda">{leyenda}</span></figcaption></figure>',
          '</section>',
          '<div class="kpis">',
@@ -1041,19 +1065,34 @@ def vista_inicio(data, res):
     tarjetas = []
     for fam, nombre in FAMILIAS.items():
         eqs = [e for e in data["equipos"] if e["familia"] == fam]
-        if not eqs:
-            continue
-        e = eqs[0]
         c1, c2 = COLOR_FAMILIA[fam]
         n_cml = sum(len(x["cmls"]) for x in eqs)
+        cond = peor_condicion(res[e["id"]]["cond"] for e in eqs) if eqs else None
+        orden = sorted(eqs, key=lambda e: ORDEN_COND.get(res[e["id"]]["cond"], 5))
+        resumen = (f'{len(eqs)} equipo(s) · {n_cml} CML · peor condición: {badge(cond)}' if eqs
+                   else '<span class="muted">Sin equipos registrados en esta familia.</span>')
+        if eqs:
+            items = "".join(
+                f'<button role="menuitem" data-act="sel_eq" data-id="{esc(e["id"])}">'
+                f'<span class="punto" style="background:{COLOR[res[e["id"]]["cond"]]}"></span>'
+                f'<span class="fm-txt"><b>{esc(e["tag"])}</b><small>{esc(e["descripcion"])}</small></span>'
+                f'<span class="fm-cond">{CONDICION[res[e["id"]]["cond"]]}</span></button>' for e in orden)
+            cabeza = (f'<details class="fam-menu"><summary class="familia-ilu" aria-label="{nombre}: ver sus {len(eqs)} equipo(s)">'
+                      f'{BOCETO[fam]}<span class="fam-menu-btn">{len(eqs)} equipo(s) ▾</span></summary>'
+                      f'<div class="fam-menu-panel" role="menu" aria-label="Equipos: {nombre}">'
+                      f'<div class="fm-tit">{PLURAL[fam]} registrados · del más grave al menos grave</div>{items}'
+                      f'<hr><button role="menuitem" class="fm-todos" data-act="ir_familia" data-familia="{fam}">'
+                      f'Ver {PLURAL[fam].lower()} en Planta ›</button></div></details>')
+        else:
+            cabeza = f'<div class="familia-ilu">{BOCETO[fam]}</div>'
         tarjetas.append(
-            f'<div class="familia" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(e["id"])}" style="--f1:{c1};--f2:{c2}" '
-            f'aria-label="Abrir {esc(e["tag"])}, {nombre}"><div class="familia-ilu">{BOCETO[fam]}</div>'
+            f'<div class="familia" style="--f1:{c1};--f2:{c2}">{cabeza}'
             f'<div class="familia-txt"><span class="eyebrow">{CODIGOS[fam]}</span><h3>{nombre}</h3>'
-            f'<p>{esc(e["tag"])} · {esc(e["descripcion"])}</p></div>'
-            f'<div class="familia-pie">{badge(res[e["id"]]["cond"])}<span class="muted">{n_cml} CML ›</span></div></div>')
+            f'<p>{DESC_FAMILIA[fam]}</p><div class="familia-resumen">{resumen}</div></div>'
+            f'<div class="familia-pie"><button class="secundario chico" data-act="ir_familia" data-familia="{fam}" '
+            f'{"disabled" if not eqs else ""}>Ver {PLURAL[fam].lower()} en Planta ›</button></div></div>')
     h.append('<div class="titulo-centro"><span class="eyebrow">Tres familias, un mismo flujo</span>'
-             f'<h2 class="titulo-seccion">Equipos del caso de estudio</h2></div><div class="familias">{"".join(tarjetas)}</div>')
+             f'<h2 class="titulo-seccion">Equipos por familia</h2></div><div class="familias">{"".join(tarjetas)}</div>')
 
     pasos = [("Elige un equipo", "Desde Planta o Equipos. Verás su ubicación técnica, esquema y CML; se abre el más crítico.", "#1f7a4d"),
              ("Revisa el CML", "Espesor actual, mínimo y de alerta, corrosión, vida remanente y la tendencia en el gráfico.", "#0e6f8f"),

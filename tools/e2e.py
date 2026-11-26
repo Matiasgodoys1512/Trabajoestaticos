@@ -81,6 +81,36 @@ def recorrer(url, salida):
             cap("00_inicio")
         paso("Abre en una portada (Inicio) con familias y puntos críticos", inicio)
 
+        def familias():
+            pg.locator('.familia-pie [data-act="ir_familia"][data-familia="tuberia"]').click()
+            pg.wait_for_timeout(500)
+            assert "#/planta" in pg.url, pg.url
+            assert pg.locator('.filtros select[data-campo="familia"]').input_value() == "tuberia"
+            assert pg.locator("#tabla-cml tr.click").count() == 4, "la familia no filtró la tabla"
+            pg.locator('[data-act="limpiar_filtros"]').click()
+            ir("inicio")
+            pg.locator('.fam-menu:has([data-familia="tanque"]) > summary').click()
+            menu_tk = pg.locator('.fam-menu:has([data-familia="tanque"]) .fam-menu-panel')
+            expect(menu_tk).to_be_visible()
+            assert menu_tk.locator('[data-act="sel_eq"]').count() == 1, "el menú debe listar todos los tanques"
+            cap("00b_menu_familia")
+            pg.locator('.fam-menu:has([data-familia="recipiente"]) > summary').click()
+            assert not menu_tk.is_visible(), "abrir otro menú debe cerrar el anterior"
+            pg.keyboard.press("Escape")
+            pg.wait_for_timeout(200)
+            assert pg.locator("details.fam-menu[open]").count() == 0, "Escape no cerró el menú"
+            pg.locator('.fam-menu:has([data-familia="tanque"]) > summary').click()
+            menu_tk.locator('[data-act="sel_eq"][data-id="TK-301"]').click()
+            pg.wait_for_timeout(500)
+            assert "#/equipos/TK-301" in pg.url, pg.url
+            ir("inicio")
+            pg.locator('.ilu-eq[data-familia="recipiente"]').click()
+            pg.wait_for_timeout(500)
+            assert pg.locator('.filtros select[data-campo="familia"]').input_value() == "recipiente"
+            pg.locator('[data-act="limpiar_filtros"]').click()
+            ir("inicio")
+        paso("Familias de la portada: filtran Planta y abren cada equipo", familias)
+
         def critico():
             pg.locator('[data-act="ir_critico"]').click()
             pg.wait_for_timeout(500)

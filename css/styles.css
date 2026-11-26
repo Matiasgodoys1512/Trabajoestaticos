@@ -670,3 +670,46 @@ form.f label.editado { color: #8a5a00; }
   .kpi { flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; }
   .kpi-v { font-size: 21px; }
 }
+
+/* ---------- tarjetas de familia (conjunto de equipos) ---------- */
+.familia { cursor: default; }
+.familia:hover { transform: none; }
+.familia-resumen { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; font-size: 12.5px; color: var(--tinta2); }
+.eq-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.eq-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 11px; border-radius: var(--pildora);
+  font-size: 12.5px; font-weight: 500; color: var(--tinta); background: var(--relleno); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eq-chip:hover { color: #fff; background: var(--f1, var(--acento)); }
+.eq-chip.mas { color: var(--f1, var(--acento)); background: transparent; box-shadow: inset 0 0 0 1px currentColor; }
+.familia-pie .secundario { width: 100%; }
+.familia-pie .secundario:hover { color: #fff; background: var(--f1); }
+.ilu-eq.vacio { opacity: .35; cursor: default; }
+
+/* ---------- menú de equipos por familia (portada) ---------- */
+.familia { overflow: visible; }
+.familia > .familia-ilu, .fam-menu > .familia-ilu { border-radius: var(--r-xl) var(--r-xl) 0 0; }
+.fam-menu { position: relative; }
+.fam-menu > summary { list-style: none; cursor: pointer; outline: none; }
+.fam-menu > summary::-webkit-details-marker { display: none; }
+.fam-menu > summary:focus-visible { box-shadow: inset 0 0 0 3px rgba(255, 255, 255, .8); }
+.fam-menu > summary svg { transition: transform .25s ease; }
+.fam-menu > summary:hover svg { transform: scale(1.04); }
+.fam-menu-btn { position: absolute; right: 14px; bottom: 12px; padding: 5px 12px; border-radius: var(--pildora); font-size: 12.5px; font-weight: 600;
+  color: var(--f1); background: rgba(255, 255, 255, .92); box-shadow: 0 4px 12px rgba(0, 0, 0, .12); }
+.fam-menu[open] .fam-menu-btn { color: #fff; background: var(--tinta); }
+.fam-menu-panel { position: absolute; top: calc(100% - 6px); left: 12px; right: 12px; z-index: 30; max-height: 340px; overflow-y: auto;
+  padding: 8px; border-radius: var(--r-l); background: var(--sup); box-shadow: 0 0 0 1px var(--linea), 0 18px 44px rgba(0, 0, 0, .18);
+  animation: pl-aparece .15s ease; }
+.fm-tit { padding: 6px 8px 8px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.fam-menu-panel button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 10px; border-radius: var(--r-s); text-align: left; font-weight: 400; font-size: 13px; color: var(--tinta); background: transparent; }
+.fam-menu-panel button:hover, .fam-menu-panel button:focus-visible { background: var(--relleno); }
+.fm-txt { min-width: 0; }
+.fm-txt b { display: block; overflow-wrap: anywhere; font-weight: 600; }
+.fm-txt small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--muted); }
+.fm-cond { font-size: 11.5px; color: var(--tinta2); white-space: nowrap; }
+.fam-menu-panel hr { border: 0; border-top: 1px solid var(--linea); margin: 6px 4px; }
+.fam-menu-panel .fm-todos { display: block; color: var(--f1); font-weight: 600; }
+details.fam-menu { margin: 0; border-radius: var(--r-xl) var(--r-xl) 0 0; background: none; box-shadow: none; }
+details.fam-menu > summary { display: grid; padding: 0; color: #fff; font-weight: inherit; }
+details.fam-menu > summary::before { display: none; }
+details.fam-menu > summary:hover { color: #fff; }

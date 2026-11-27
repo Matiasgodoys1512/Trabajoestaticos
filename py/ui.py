@@ -253,10 +253,16 @@ def evaluar_todo(data, hoy=None):
 
 
 # ------------------------------------------------------------------ barra lateral
-def sidebar(data, res, sel_id, filtros=None):
-    """Estructura de planta (Planta › Área › Sistema › Equipo). Los filtros viven junto a la tabla de Planta."""
-    h = ['<div class="lateral-cab"><span>Equipos</span>'
-         '<button data-act="nuevo_eq" class="secundario chico" title="Registrar un equipo nuevo">+ Nuevo</button></div>']
+def sidebar(data, res, sel_id, filtros=None, buscar=""):
+    """Estructura de planta (Planta › Área › Sistema › Equipo) con buscador por TAG o descripción."""
+    n = len(data["equipos"])
+    h = [f'<div class="lateral-cab"><span>Equipos <small>{n}</small></span>'
+         '<button data-act="nuevo_eq" class="secundario chico" title="Registrar un equipo nuevo">+ Nuevo</button></div>',
+         '<label class="buscar-eq"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
+         'stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>'
+         f'<input type="search" data-act="buscar_eq" value="{esc(buscar)}" placeholder="Buscar TAG o descripción" '
+         'aria-label="Buscar equipo por TAG o descripción" autocomplete="off"></label>',
+         '<p class="sin-res muted" hidden>Ningún equipo coincide con la búsqueda.</p>']
     arbol = {}
     for e in data["equipos"]:
         u = e["ubicacion"]
@@ -265,18 +271,20 @@ def sidebar(data, res, sel_id, filtros=None):
     for planta, areas_ in arbol.items():
         h.append(f'<li><div class="nodo nodo-planta">{esc(planta)}</div><ul>')
         for area, sistemas in areas_.items():
-            h.append(f'<li><div class="nodo">{esc(area)}</div><ul>')
+            h.append(f'<li><div class="nodo nodo-area">{esc(area)}</div><ul>')
             for sist, eqs in sistemas.items():
                 h.append(f'<li><div class="nodo nodo-sistema">{esc(sist)}</div>')
                 for e in eqs:
                     cond = res[e["id"]]["cond"]
                     act = "activo" if e["id"] == sel_id else ""
                     desc = e.get("descripcion") or FAMILIAS[e["familia"]]
+                    clave = f'{e["tag"]} {desc} {FAMILIAS[e["familia"]]}'.lower()
                     h.append(f'<div class="eq-item {act}" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(e["id"])}" '
+                             f'data-buscar="{esc(clave)}" style="--c:{COLOR[cond]};--f:{COLOR_FAMILIA[e["familia"]][0]}" '
                              f'title="{esc(e["tag"])} · {esc(desc)} · {CONDICION[cond]}" aria-label="{esc(e["tag"])}, {CONDICION[cond]}">'
-                             f'<span class="punto" style="background:{COLOR[cond]}"></span>'
-                             f'<span class="eq-txt"><span class="eq-tag">{esc(e["tag"])}</span>'
-                             f'<small>{FAMILIAS[e["familia"]].split()[0]} · {esc(desc)}</small></span></div>')
+                             f'<span class="eq-ico">{ICONO_FAMILIA[e["familia"]]}</span>'
+                             f'<span class="eq-txt"><span class="eq-tag">{esc(e["tag"])}</span><small>{esc(desc)}</small></span>'
+                             f'<span class="punto" style="background:{COLOR[cond]}"></span></div>')
                 h.append('</li>')
             h.append('</ul></li>')
         h.append('</ul></li>')

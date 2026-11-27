@@ -723,3 +723,51 @@ details.fam-menu > summary:hover { color: #fff; }
 .filtro-chip:hover span { color: var(--acento); background: #fff; }
 .pl-area-x { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-size: 11px; color: #fff; background: var(--acento); }
 .pl-area-cab[aria-pressed="true"]:hover .pl-area-x { background: var(--acento-h); }
+
+/* ---------- navegación superior con íconos ---------- */
+.nav { gap: 2px; padding: 4px; border-radius: var(--pildora); background: rgba(118, 118, 128, .08); box-shadow: inset 0 0 0 1px var(--linea-2); }
+.nav button { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: var(--pildora); white-space: nowrap;
+  transition: color .15s, background .15s, box-shadow .15s; }
+.nav button svg { width: 16px; height: 16px; flex: none; opacity: .7; transition: transform .2s ease, opacity .15s, color .15s; }
+.nav button:hover { color: var(--tinta); background: rgba(255, 255, 255, .8); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
+.nav button:hover svg { color: var(--acento); opacity: 1; transform: translateY(-1px) scale(1.08); }
+.nav button.activo { color: var(--tinta); font-weight: 600; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .1), 0 0 0 .5px rgba(0, 0, 0, .04); }
+.nav button.activo svg { color: var(--acento); opacity: 1; }
+.nav button:focus-visible { box-shadow: 0 0 0 3px var(--acento-anillo); }
+
+/* ---------- barra lateral ---------- */
+aside { background: linear-gradient(180deg, #eef5f1 0%, #f4f7f5 45%, #f6f7f7 100%); border-right: 1px solid rgba(31, 122, 77, .10); padding: 20px 12px; }
+.lateral-cab span small { margin-left: 4px; padding: 1px 8px; border-radius: var(--pildora); font-size: 11.5px; font-weight: 600;
+  color: var(--acento-h); background: rgba(31, 122, 77, .12); }
+.buscar-eq { position: relative; display: block; margin: 4px 2px 12px; }
+.buscar-eq svg { position: absolute; left: 11px; top: 50%; width: 15px; height: 15px; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.buscar-eq input { width: 100%; padding: 8px 12px 8px 33px; font-size: 13px; border-radius: var(--pildora); background: rgba(255, 255, 255, .85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .06); }
+.sin-res { margin: 4px 10px; font-size: 12.5px; }
+.arbol .nodo-planta { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12px; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--acento-h); }
+.arbol .nodo-area { padding: 8px 8px 2px; font-size: 12.5px; font-weight: 600; color: var(--tinta); }
+.arbol .nodo-sistema { padding: 4px 8px 2px; font-size: 11.5px; color: var(--muted); }
+.arbol ul { border-left-color: rgba(31, 122, 77, .14); }
+.eq-item { position: relative; align-items: center; gap: 10px; margin: 3px 0; padding: 8px 10px; border-radius: 12px;
+  transition: background .18s, box-shadow .18s, transform .18s; }
+.eq-item:hover { background: rgba(255, 255, 255, .9); box-shadow: 0 2px 8px rgba(0, 0, 0, .07); transform: translateX(2px); }
+.eq-item:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--acento-anillo); }
+.eq-item.activo { background: #fff; font-weight: 600; box-shadow: inset 3px 0 0 var(--c), 0 4px 14px rgba(0, 0, 0, .08); }
+.eq-ico { flex: none; display: grid; place-items: center; width: 30px; height: 30px; padding: 6px; border-radius: 9px; color: var(--f);
+  background: color-mix(in srgb, var(--f) 12%, #fff); transition: background .18s, color .18s; }
+.eq-ico svg { width: 100%; height: 100%; display: block; }
+.eq-item:hover .eq-ico, .eq-item.activo .eq-ico { color: #fff; background: var(--f); }
+.eq-item .punto { margin: 0 0 0 auto; box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+.eq-item .eq-txt small { max-width: 150px; }
+@media (max-width: 1180px) {
+  aside { max-height: 320px; }
+  .nav { border-radius: 14px; }
+}
+@media (min-width: 1181px) and (max-width: 1400px) {
+  .topbar { padding-left: 20px; padding-right: 20px; gap: 10px; }
+  .marca .sub { display: none; }
+  .nav button { padding: 7px 10px; gap: 6px; }
+  .caja-fecha > span, .estado-guardado { display: none; }
+  .caja-fecha { padding-left: 4px; }
+}

@@ -24,7 +24,7 @@ LIMITES = {"importar": 25_000_000, "subir_img": 1_500_000, "subir_pdf": 3_000_00
 FIRMAS = {"image/png": b"\x89PNG", "image/jpeg": b"\xff\xd8\xff", "application/pdf": b"%PDF"}
 FORM_ACCION = {"form_med": "add_med", "form_cml": "add_cml", "form_xy": "mover_cml", "form_eq": "guardar_eq"}
 E = {"data": None, "eq": None, "cml": None, "tab": "inicio", "sub": "resumen", "filtros": {}, "editando": None,
-     "rbi_eq": None, "cambio": "", "cambio_ruta": None, "demo": None}
+     "rbi_eq": None, "cambio": "", "cambio_ruta": None, "demo": None, "buscar": ""}
 VISTAS = ("inicio", "planta", "equipos", "plan", "rbi", "validacion", "acerca")
 ETIQUETA_RBI = {"cml": "CML gobernante", "confianza": "Confianza en la CR", "pscore": "Puntaje de gestión [%]", "C_A_m2": "C_A [m²]",
                 "C_E": "C_E", "f_om": "F_OM", "moneda": "Moneda", "base_valoracion": "Base de valoración"}
@@ -171,7 +171,9 @@ def render(empujar=True):
             E["cml"] = ui.cml_gobernante(eq, res[eq["id"]])[0]["id"] if not res[eq["id"]]["error"] else eq["cmls"][0]["id"]
         lateral = t == "equipos"
         document.getElementById("app").classList.toggle("con-lateral", lateral)
-        document.getElementById("sidebar").innerHTML = ui.sidebar(data, res, E["eq"], E["filtros"]) if lateral else ""
+        document.getElementById("sidebar").innerHTML = ui.sidebar(data, res, E["eq"], E["filtros"], E["buscar"]) if lateral else ""
+        if lateral and E["buscar"]:
+            filtrar_lateral()
         for b in document.querySelectorAll("#tabs button"):
             activo = attr(b, "tab") == t
             b.classList.toggle("activo", activo)
@@ -809,6 +811,27 @@ def on_change(evt):
         _seguro(accion_change, evt.target)
 
 
+def filtrar_lateral():
+    """Muestra solo los equipos cuyo TAG o descripción contiene el texto buscado (y oculta ramas vacías)."""
+    q = E["buscar"].strip().lower()
+    visibles = 0
+    for el in document.querySelectorAll("#sidebar .eq-item"):
+        ok = not q or q in (attr(el, "buscar") or "")
+        el.hidden = not ok
+        visibles += ok
+    for li in document.querySelectorAll("#sidebar .arbol li"):
+        li.hidden = li.querySelectorAll(".eq-item:not([hidden])").length == 0
+    aviso = document.querySelector("#sidebar .sin-res")
+    if hay(aviso):
+        aviso.hidden = visibles > 0
+
+
+def on_input(evt):
+    if attr(evt.target, "act") == "buscar_eq":
+        E["buscar"] = str(evt.target.value or "")[:60]
+        filtrar_lateral()
+
+
 def on_submit(evt):
     evt.preventDefault()  # el botón del formulario ya recibe un clic (también con Enter)
 
@@ -846,7 +869,7 @@ async def iniciar():
             await leer_demo()
         except Exception:  # noqa: BLE001 — sin demo de referencia solo se pierde la marca de campos editados
             E["demo"] = None
-    for tipo, fn in (("click", on_click), ("change", on_change), ("submit", on_submit), ("keydown", on_keydown)):
+    for tipo, fn in (("click", on_click), ("change", on_change), ("submit", on_submit), ("keydown", on_keydown), ("input", on_input)):
         registrar(tipo, fn)
     p = create_proxy(on_popstate)
     _proxies.append(p)

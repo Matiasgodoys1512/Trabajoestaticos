@@ -351,6 +351,19 @@ def recorrer(url, salida):
             assert "V-201" in pg.locator(".cabecera h1").inner_text()
         paso("Navegación con teclado", teclado)
 
+        def buscador():
+            ir("equipos")
+            pg.fill('input[data-act="buscar_eq"]', "tanque")
+            pg.wait_for_timeout(400)
+            assert pg.locator("#sidebar .eq-item:not([hidden])").count() == 1, "el buscador no filtró"
+            pg.fill('input[data-act="buscar_eq"]', "zzz")
+            pg.wait_for_timeout(300)
+            assert pg.locator("#sidebar .sin-res").is_visible(), "falta el aviso sin resultados"
+            pg.fill('input[data-act="buscar_eq"]', "")
+            pg.wait_for_timeout(300)
+            assert pg.locator("#sidebar .eq-item:not([hidden])").count() >= 3
+        paso("Buscador de equipos en la barra lateral", buscador)
+
         def rbi_planta():
             import copy as _c
             import json as _j

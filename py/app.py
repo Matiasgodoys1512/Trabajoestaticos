@@ -364,7 +364,21 @@ def accion_click(el):
         render()
         return
     if act == "ir_area":
-        E["tab"], E["filtros"], E["editando"] = "planta", {"area": attr(el, "area")}, None
+        area = attr(el, "area")
+        if E["tab"] == "planta":  # en Planta el área funciona como interruptor y conserva los demás filtros
+            f = dict(E["filtros"])
+            if f.get("area") == area:
+                f.pop("area")
+            else:
+                f["area"] = area
+            E["filtros"] = f
+        else:  # desde las migas de un equipo: ver solo esa área
+            E["tab"], E["filtros"] = "planta", {"area": area}
+        E["editando"] = None
+        render()
+        return
+    if act == "quitar_filtro":
+        E["filtros"] = {k: v for k, v in E["filtros"].items() if k != attr(el, "campo")}
         render()
         return
     if act == "ir_familia":

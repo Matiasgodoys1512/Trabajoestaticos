@@ -397,9 +397,13 @@ def areas_planta(arbol, res, visibles, filtros):
                             f'<div class="pl-eqs">{"".join(tiles)}</div></div>')
         n_eq = sum(len(v) for v in arbol[area].values())
         av = f'<span class="pl-area-av">{TRIANGULO}{n_av}</span>' if n_av else ''
-        sel = " sel" if filtros.get("area") == area else ""
+        marcada = filtros.get("area") == area
+        sel = " sel" if marcada else ""
+        ayuda_area = "Clic de nuevo para ver todas las áreas" if marcada else "Filtrar indicadores y tabla por esta área"
+        quitar = '<span class="pl-area-x" aria-hidden="true">✕</span>' if marcada else ""
         areas.append(f'<section class="pl-area{sel}"><button class="pl-area-cab" data-act="ir_area" data-area="{esc(area)}" '
-                     f'title="Filtrar la tabla por esta área"><span>{esc(area)}<small>{n_eq} equipo(s)</small></span>{av}</button>'
+                     f'aria-pressed="{"true" if marcada else "false"}" title="{ayuda_area}">'
+                     f'<span>{esc(area)}<small>{n_eq} equipo(s){" · filtrando" if marcada else ""}</small></span>{av}{quitar}</button>'
                      f'{"".join(sistemas)}</section>')
     return "".join(areas)
 
@@ -448,8 +452,14 @@ def panel(data, res, filtros):
              f'<select data-act="filtro" data-campo="cond" aria-label="Condición">{opts(CONDICION.items(), filtros.get("cond"), "Todas las condiciones")}</select>'
              + ('<button class="chico secundario" data-act="limpiar_filtros">Limpiar filtros</button>' if activos else '')
              + '</div>')
+    nombres = {"area": lambda v: v, "familia": lambda v: FAMILIAS.get(v, v), "cond": lambda v: CONDICION.get(v, v)}
+    chips = "".join(f'<button class="filtro-chip" data-act="quitar_filtro" data-campo="{k}" title="Quitar este filtro">'
+                    f'{esc(nombres[k](v))}<span aria-hidden="true">✕</span></button>' for k, v in filtros.items() if v and k in nombres)
+    activos_txt = ('<div class="filtros-activos" role="status"><span class="muted">Mostrando solo:</span>' + chips
+                   + '<button class="enlace" data-act="limpiar_filtros">Quitar filtros</button></div>') if activos else ""
     h = ['<div class="cabecera"><h1>Estado de la planta</h1>'
          '<span class="desc">Plano por áreas y puntos de monitoreo, del más grave al menos grave</span></div>',
+         activos_txt,
          '<div class="stats">', stat("Equipos", n_eq, sub=f"{len(filas)} CML" + (" (filtrado)" if activos else ""), clase="destacado")]
     for k, n in cuenta.items():
         h.append(f'<div class="stat estado" style="--c:{COLOR[k]}"><div class="l">{CONDICION[k]}</div>'

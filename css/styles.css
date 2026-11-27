@@ -713,3 +713,13 @@ details.fam-menu { margin: 0; border-radius: var(--r-xl) var(--r-xl) 0 0; backgr
 details.fam-menu > summary { display: grid; padding: 0; color: #fff; font-weight: inherit; }
 details.fam-menu > summary::before { display: none; }
 details.fam-menu > summary:hover { color: #fff; }
+
+/* ---------- filtros activos en Planta ---------- */
+.filtros-activos { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -6px 0 16px; font-size: 13px; }
+.filtro-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px 5px 12px; border-radius: var(--pildora); font-size: 13px;
+  font-weight: 500; color: var(--acento-h); background: var(--acento-suave); box-shadow: inset 0 0 0 1px rgba(31, 122, 77, .25); }
+.filtro-chip span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; color: #fff; background: var(--acento); }
+.filtro-chip:hover { color: #fff; background: var(--acento); }
+.filtro-chip:hover span { color: var(--acento); background: #fff; }
+.pl-area-x { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-size: 11px; color: #fff; background: var(--acento); }
+.pl-area-cab[aria-pressed="true"]:hover .pl-area-x { background: var(--acento-h); }

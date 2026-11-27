@@ -87,7 +87,7 @@ def recorrer(url, salida):
             assert "#/planta" in pg.url, pg.url
             assert pg.locator('.filtros select[data-campo="familia"]').input_value() == "tuberia"
             assert pg.locator("#tabla-cml tr.click").count() == 4, "la familia no filtró la tabla"
-            pg.locator('[data-act="limpiar_filtros"]').click()
+            pg.locator('[data-act="limpiar_filtros"]').first.click()
             ir("inicio")
             pg.locator('.fam-menu:has([data-familia="tanque"]) > summary').click()
             menu_tk = pg.locator('.fam-menu:has([data-familia="tanque"]) .fam-menu-panel')
@@ -107,7 +107,7 @@ def recorrer(url, salida):
             pg.locator('.ilu-eq[data-familia="recipiente"]').click()
             pg.wait_for_timeout(500)
             assert pg.locator('.filtros select[data-campo="familia"]').input_value() == "recipiente"
-            pg.locator('[data-act="limpiar_filtros"]').click()
+            pg.locator('[data-act="limpiar_filtros"]').first.click()
             ir("inicio")
         paso("Familias de la portada: filtran Planta y abren cada equipo", familias)
 
@@ -129,7 +129,7 @@ def recorrer(url, salida):
             pg.wait_for_timeout(500)
             assert pg.locator("#tabla-cml tr.click").count() == 3, "el filtro por familia no funcionó"
             assert pg.locator("#calidad tr.click").count() == 1, "calidad de datos debe respetar el filtro"
-            pg.locator('[data-act="limpiar_filtros"]').click()
+            pg.locator('[data-act="limpiar_filtros"]').first.click()
             pg.wait_for_timeout(400)
             cap("01_panel")
         paso("Planta: tabla de CML con filtros junto a la tabla", panel)
@@ -153,8 +153,15 @@ def recorrer(url, salida):
             pg.locator(".pl-area-cab").first.click()
             pg.wait_for_timeout(400)
             assert pg.locator(".pl-area.sel").count() == 1 and pg.locator(".pl-eq.atenuado").count() >= 1, "el área no filtró"
-            pg.locator('[data-act="limpiar_filtros"]').click()
+            assert pg.locator(".filtros-activos .filtro-chip").count() == 1, "falta el filtro activo visible"
+            pg.locator(".pl-area.sel .pl-area-cab").click()          # segundo clic: deselecciona
+            pg.wait_for_timeout(400)
+            assert pg.locator(".pl-area.sel").count() == 0 and pg.locator(".filtros-activos").count() == 0, "el área no se deseleccionó"
+            pg.locator(".pl-area-cab").first.click()
             pg.wait_for_timeout(300)
+            pg.locator('.filtro-chip[data-campo="area"]').click()     # quitar con la «✕» del filtro
+            pg.wait_for_timeout(300)
+            assert pg.locator(".pl-area.sel").count() == 0, "la ✕ del filtro no lo quitó"
         paso("Plano de planta: avisos, pop-up con CML y filtro por área", plano)
 
         def equipo():

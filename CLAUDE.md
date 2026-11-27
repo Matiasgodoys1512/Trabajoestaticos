@@ -33,11 +33,12 @@
 - `index.html`, `css/` → interfaz. `.nojekyll` es obligatorio (GitHub Pages ignora `__init__.py` sin él).
 - E2E en navegador real: `.venv/Scripts/python tools/e2e.py` (Playwright + Chromium dentro de `.venv/ms-playwright`).
 - `data/` → caso demostrativo (JSON) + esquemas PNG.
+- Equipos ocultos: `data["ocultos"]` (IDs). `ui.visibles(data)` alimenta Inicio, Planta, Plan y RBI; la barra lateral muestra todos con casillas.
 - Fecha de evaluación global: `data["fecha_evaluacion"]` (vacía = hoy). `ui.evaluar_todo` la fija en `ui._CTX`; usar `ui.hoy_eval()`, nunca `date.today()`, en cálculos de condición/RBI/plan.
 
 ## Alcance técnico
 - Tubería: ASME B31.3 / API 570, tramo recto. Recipiente: VIII-1 UG-27 + II-D / API 510. Tanque: API 650 / API 653, virolas (1 pie).
-- RBI: API RP 580/581, adelgazamiento generalizado, solo para el recipiente, como modelo académico simplificado.
+- RBI: API RP 580/581, adelgazamiento generalizado (Parte 2 §4) para tubería, recipiente y manto de tanque, gff según Tabla 3.1; modelo académico simplificado.
 - Cada cálculo en la UI muestra: entradas, unidades, ecuación, referencia y resultado.
 - Estados: normal, alerta, bajo el mínimo, inspección vencida, información insuficiente.
 

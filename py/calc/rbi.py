@@ -10,6 +10,9 @@ COND = {  # Tabla 4.6: (Co1, Co2, Co3)
 DS = (1, 2, 4)
 COV_DT, COV_SF, COV_P = 0.20, 0.20, 0.05
 GFF_RECIPIENTE = 3.06e-5  # Tabla 3.1, falla/año
+# API 581 Parte 2, Tabla 3.1 (gff total, fallas/año): PIPE-x y Vessel = 3,06·10⁻⁵; Tank650 COURSE-1-10 = 1,00·10⁻⁴
+GFF = {"tuberia": 3.06e-5, "recipiente": 3.06e-5, "tanque": 1.00e-4}
+COMPONENTE_581 = {"tuberia": "PIPE (Tabla 3.1)", "recipiente": "Vessel DRUM (Tabla 3.1)", "tanque": "Tank650 COURSE-1-10 (Tabla 3.1)"}
 
 # Parte 1, Tablas 4.1M y 4.2 (límites superiores)
 LIM_POF = [3.06e-5, 3.06e-4, 3.06e-3, 3.06e-2]

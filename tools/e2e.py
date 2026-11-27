@@ -189,7 +189,15 @@ def recorrer(url, salida):
             pg.wait_for_timeout(800)
             despues = pg.locator(".stat .v").nth(0).inner_text()
             assert antes != despues, f"t actual no cambió ({antes})"
+            assert pg.locator("#btn-guardar.sucio").count() == 1, "el botón Guardar debía marcar cambios pendientes"
             cap("03_medicion_agregada")
+            pg.keyboard.press("Control+s")
+            pg.wait_for_timeout(500)
+            assert pg.locator("#btn-guardar.sucio").count() == 0, "Ctrl+S no guardó"
+            pg.reload()
+            pg.wait_for_selector("#app:not([hidden])", timeout=180_000)
+            pg.wait_for_timeout(800)
+            assert pg.locator(".stat .v").nth(0).inner_text() == despues, "la medición guardada no persistió"
         paso("Agregar medición y recalcular", medicion)
 
         def diseno():
@@ -232,10 +240,16 @@ def recorrer(url, salida):
 
         def validacion():
             ir("validacion")
-            txt = pg.locator(".stat").first.inner_text()
-            assert "/" in txt
-            n, tot = txt.split("\n")[1].split("/")
+            txt = pg.locator(".kpi-v").first.inner_text()
+            n, tot = txt.split("/")
             assert n.strip() == tot.strip(), f"validación incompleta: {txt}"
+            pg.locator('[data-act="val_fam"][data-fam="tanque"]').click()
+            pg.wait_for_timeout(400)
+            assert pg.locator(".val-grupo").count() == 1, "el filtro de familia no funcionó"
+            pg.locator("details.val-caso > summary").first.click()
+            expect(pg.locator("details.val-caso[open] .val-det")).to_be_visible()
+            pg.locator('[data-act="val_fam"][data-fam=""]').click()
+            pg.wait_for_timeout(300)
             cap("06_validacion")
         paso("Validación: todos los casos OK", validacion)
 
@@ -351,6 +365,60 @@ def recorrer(url, salida):
             assert "V-201" in pg.locator(".cabecera h1").inner_text()
         paso("Navegación con teclado", teclado)
 
+        def visibilidad():
+            ir("equipos")
+            pg.locator('.nodo-area:has-text("Área 300") input.vis').click()
+            pg.wait_for_timeout(600)
+            assert pg.locator(".eq-fila.oculto").count() == 1, "TK-301 debía quedar oculto"
+            ir("planta")
+            assert pg.locator("#tabla-cml tr.click").count() == 7, "Planta debía excluir el equipo oculto"
+            assert pg.locator(".oculto-chip").count() == 1
+            ir("inicio")
+            assert "TK-301" not in pg.locator(".familias").inner_text()
+            ir("equipos")
+            pg.locator('.nodo-area:has-text("Alquilación") [data-act="plegar"]').click()
+            pg.wait_for_timeout(300)
+            assert not pg.locator('.eq-item[data-id="V-201"]').is_visible(), "el área no se plegó"
+            pg.locator('.nodo-area:has-text("Alquilación") [data-act="plegar"]').click()
+            pg.wait_for_timeout(300)
+            pg.locator('[data-act="mostrar_todos"]').first.click()
+            pg.wait_for_timeout(500)
+            assert pg.locator(".eq-fila.oculto").count() == 0
+        paso("Lista de Equipos plegable con casillas para ocultar equipos en toda la app", visibilidad)
+
+        def arrastrar_cml():
+            menu("restablecer")
+            pg.wait_for_timeout(1500)
+            abrir_equipo("V-201")
+            antes = pg.locator(".chip").count()
+            tok = pg.locator(".cml-token").bounding_box()
+            img = pg.locator(".esquema img").bounding_box()
+            pg.mouse.move(tok["x"] + tok["width"] / 2, tok["y"] + tok["height"] / 2)
+            pg.mouse.down()
+            destino = (img["x"] + img["width"] * .5, img["y"] + img["height"] * .45)   # virola 2
+            pg.mouse.move(destino[0] - 40, destino[1] - 40, steps=8)
+            pg.mouse.move(*destino, steps=8)
+            expect(pg.locator(".zona-luz")).to_be_visible()
+            assert "Virola 2" in pg.locator(".zona-luz").inner_text(), pg.locator(".zona-luz").inner_text()
+            cap("02b_arrastre_cml")
+            pg.mouse.up()
+            pg.wait_for_timeout(700)
+            expect(pg.locator(".modal")).to_be_visible()
+            assert pg.locator('#form_cml input[name="id"]').input_value() == "CML-201-04"
+            assert pg.locator('#form_cml input[name="componente"]').input_value() == "Envolvente - virola 2"
+            cap("02c_modal_cml")
+            pg.locator('.modal [data-act="add_cml"]').click()
+            pg.wait_for_timeout(800)
+            assert pg.locator(".modal").count() == 0 and pg.locator(".chip").count() == antes + 1, "el CML no se agregó"
+            pg.locator('.cml-token').focus()
+            pg.keyboard.press("Enter")
+            pg.wait_for_timeout(500)
+            expect(pg.locator(".modal")).to_be_visible()
+            pg.keyboard.press("Escape")
+            pg.wait_for_timeout(400)
+            assert pg.locator(".modal").count() == 0, "Escape no cerró la ventana"
+        paso("Agregar CML arrastrando el ícono al esquema (zona iluminada y sugerencias)", arrastrar_cml)
+
         def buscador():
             ir("equipos")
             pg.fill('input[data-act="buscar_eq"]', "tanque")
@@ -363,6 +431,43 @@ def recorrer(url, salida):
             pg.wait_for_timeout(300)
             assert pg.locator("#sidebar .eq-item:not([hidden])").count() >= 3
         paso("Buscador de equipos en la barra lateral", buscador)
+
+        def nuevo_recipiente():
+            ir("equipos")
+            pg.locator('[data-act="nuevo_eq"]').click()
+            pg.wait_for_timeout(400)
+            pg.locator('[data-act="nuevo_fam"][data-familia="recipiente"]').click()
+            pg.wait_for_timeout(400)
+            assert pg.locator('#form_eq input[name="tag"]').input_value() == "V-202", "falta el TAG sugerido"
+            assert "VIII-1" in pg.locator('#form_eq input[name="codigo_diseno"]').input_value()
+            pg.fill('#form_eq input[name="t_nom_mm"]', "12")
+            pg.fill('#form_eq input[name="area"]', "Área 100 - Alquilación")
+            pg.locator('[data-act="guardar_eq"]').click()
+            pg.wait_for_timeout(800)
+            assert pg.locator('.eq-item[data-id="V-202"]').count() == 1, pg.locator("#toast").inner_text()
+            ir("equipos")
+            pg.locator('[data-act="nuevo_eq"]').click()
+            pg.wait_for_timeout(300)
+            pg.locator('[data-act="nuevo_fam"][data-familia="tuberia"]').click()
+            pg.wait_for_timeout(300)
+            pg.select_option('select[data-act="preset_nps"]', "219.1|8.18")
+            assert pg.locator('#form_eq input[name="t_nom_mm"]').input_value() == "8.18"
+            assert pg.locator('#form_eq input[name="d_D_ext_mm"]').input_value() == "219.1"
+            pg.locator('[data-act="cancelar_eq"]').click()
+            pg.wait_for_timeout(300)
+        paso("Nuevo equipo con familia y campos predefinidos (TAG, códigos, NPS/cédula)", nuevo_recipiente)
+
+        def rbi_tuberia():
+            ir("rbi")
+            pg.select_option('select[data-act="sel_rbi"]', "L-101")
+            pg.wait_for_timeout(500)
+            pg.locator('[data-act="crear_rbi"]').click()
+            pg.wait_for_timeout(800)
+            assert "Tubería" in pg.locator(".cabecera .desc").inner_text()
+            assert pg.locator(".stat").count() >= 5, "faltan los resultados del RBI de la tubería"
+            menu("restablecer")
+            pg.wait_for_timeout(1500)
+        paso("Riesgo (RBI) también para tuberías y tanques, con selector de equipo", rbi_tuberia)
 
         def rbi_planta():
             import copy as _c

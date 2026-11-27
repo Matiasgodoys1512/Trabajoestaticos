@@ -205,3 +205,11 @@ def test_rbi_cml_201_03():
     assert r["Df"] == pytest.approx(205.5932, rel=1e-4)
     rr = rbi.riesgo(r["Df"], 120, 20_000_000)
     assert rr["R_E"] == pytest.approx(125823.05, rel=1e-4)
+
+
+def test_gff_por_familia_tabla_3_1():
+    # API 581 Parte 2 Tabla 3.1: virola de tanque 1,00E-04; tubería y recipiente 3,06E-05
+    assert rbi.GFF["tanque"] == pytest.approx(1.0e-4)
+    assert rbi.GFF["tuberia"] == rbi.GFF["recipiente"] == pytest.approx(3.06e-5)
+    r_tk = rbi.riesgo(10.0, 100, 1e5, gff=rbi.GFF["tanque"])
+    assert r_tk["Pf"] == pytest.approx(1.0e-3)

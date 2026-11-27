@@ -37,11 +37,12 @@
     <div class="acciones">
       <label class="caja-fecha" id="caja-fecha"><span>Evaluado al</span>
         <input type="date" id="fecha-eval" data-act="fecha_eval" aria-label="Fecha de evaluación del proyecto"></label>
-      <span id="estado-guardado" class="estado-guardado" aria-live="polite" title="Los cambios se guardan automáticamente en este navegador"></span>
+      <span id="estado-guardado" class="estado-guardado" aria-live="polite"></span>
+      <button id="btn-guardar" class="btn-guardar" data-act="guardar" title="Guardar los cambios en este navegador (Ctrl + S)">
+        <span class="bg-punto" aria-hidden="true"></span><span class="bg-txt">Guardado</span></button>
       <details class="menu">
         <summary aria-label="Opciones del proyecto">Proyecto</summary>
         <div class="menu-panel" role="menu">
-          <button role="menuitem" data-act="guardar">Guardar ahora<small>En este navegador</small></button>
           <button role="menuitem" data-act="exportar">Exportar proyecto<small>Archivo JSON con esquemas y PDF</small></button>
           <label class="item" role="menuitem">Importar proyecto<small>Cargar un JSON exportado</small>
             <input type="file" accept=".json,application/json" data-act="importar" hidden></label>

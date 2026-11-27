@@ -120,6 +120,8 @@ def validar_proyecto(data):
         out["equipos"].append(e)
     if err:
         raise ErrorProyecto(err)
+    oc = data.get("ocultos")
+    out["ocultos"] = sorted({texto(x, 60) for x in oc if isinstance(x, str)} & ids) if isinstance(oc, list) else []
     return out
 
 

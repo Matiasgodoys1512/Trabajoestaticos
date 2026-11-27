@@ -90,3 +90,12 @@ def test_fecha_evaluacion_saneada():
     assert validar_proyecto(d)["fecha_evaluacion"] == ""
     del d["fecha_evaluacion"]
     assert validar_proyecto(d)["fecha_evaluacion"] == ""
+
+
+
+def test_ocultos_saneados():
+    d = copy.deepcopy(DEMO)
+    d["ocultos"] = ["TK-301", "NO-EXISTE", 5, "<b>"]
+    assert validar_proyecto(d)["ocultos"] == ["TK-301"]
+    d["ocultos"] = "TK-301"
+    assert validar_proyecto(d)["ocultos"] == []

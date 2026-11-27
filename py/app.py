@@ -8,6 +8,7 @@ import asyncio
 import base64
 import copy
 import json
+import time
 import traceback
 from datetime import date, datetime
 
@@ -24,7 +25,7 @@ LIMITES = {"importar": 25_000_000, "subir_img": 1_500_000, "subir_pdf": 3_000_00
 FIRMAS = {"image/png": b"\x89PNG", "image/jpeg": b"\xff\xd8\xff", "application/pdf": b"%PDF"}
 FORM_ACCION = {"form_med": "add_med", "form_cml": "add_cml", "form_xy": "mover_cml", "form_eq": "guardar_eq"}
 E = {"data": None, "eq": None, "cml": None, "tab": "inicio", "sub": "resumen", "filtros": {}, "editando": None,
-     "rbi_eq": None, "cambio": "", "cambio_ruta": None, "demo": None, "buscar": ""}
+     "rbi_eq": None, "cambio": "", "cambio_ruta": None, "demo": None, "buscar": "", "val_fam": "", "plegados": set(), "nuevo_cml": None, "nuevo_fam": "tuberia", "sucio": False}
 VISTAS = ("inicio", "planta", "equipos", "plan", "rbi", "validacion", "acerca")
 ETIQUETA_RBI = {"cml": "CML gobernante", "confianza": "Confianza en la CR", "pscore": "Puntaje de gestión [%]", "C_A_m2": "C_A [m²]",
                 "C_E": "C_E", "f_om": "F_OM", "moneda": "Moneda", "base_valoracion": "Base de valoración"}
@@ -79,12 +80,26 @@ def descargar(texto, nombre, mime):
     window.URL.revokeObjectURL(url)
 
 
+def estado_guardado():
+    """Refleja en la barra superior si hay cambios pendientes de guardar."""
+    b = document.getElementById("btn-guardar")
+    if not hay(b):
+        return
+    b.classList.toggle("sucio", E["sucio"])
+    b.querySelector(".bg-txt").innerText = "Guardar cambios" if E["sucio"] else "Guardado"
+    b.setAttribute("aria-label", "Guardar cambios pendientes" if E["sucio"] else "Sin cambios pendientes")
+    if E["sucio"]:
+        document.getElementById("estado-guardado").innerText = "Cambios sin guardar"
+
+
 def guardar_local(aviso=False):
     try:
         window.localStorage.setItem(CLAVE, json.dumps(E["data"], ensure_ascii=False))
         document.getElementById("estado-guardado").innerText = f"Guardado {datetime.now():%H:%M}"
+        E["sucio"] = False
+        estado_guardado()
         if aviso:
-            toast("Proyecto guardado en este navegador.")
+            toast("Cambios guardados en este navegador.")
         return True
     except Exception:  # noqa: BLE001 — QuotaExceededError u otro error del navegador
         document.getElementById("estado-guardado").innerText = "Sin guardar"
@@ -148,7 +163,7 @@ def on_popstate(evt):
 def ir_a_lo_critico():
     """Lleva al CML más crítico de toda la planta (acción principal de la portada)."""
     res = ui.evaluar_todo(E["data"])
-    fl = ui.puntos_atencion(E["data"], res)
+    fl = ui.puntos_atencion(ui.visibles(E["data"]), res)
     if fl:
         E["tab"], E["eq"], E["cml"], E["sub"], E["editando"] = "equipos", fl[0]["_eq"], fl[0]["_cml"], "resumen", None
 
@@ -171,9 +186,14 @@ def render(empujar=True):
             E["cml"] = ui.cml_gobernante(eq, res[eq["id"]])[0]["id"] if not res[eq["id"]]["error"] else eq["cmls"][0]["id"]
         lateral = t == "equipos"
         document.getElementById("app").classList.toggle("con-lateral", lateral)
-        document.getElementById("sidebar").innerHTML = ui.sidebar(data, res, E["eq"], E["filtros"], E["buscar"]) if lateral else ""
-        if lateral and E["buscar"]:
-            filtrar_lateral()
+        document.getElementById("sidebar").innerHTML = (ui.sidebar(data, res, E["eq"], E["filtros"], E["buscar"], E["plegados"])
+                                                         if lateral else "")
+        if lateral:
+            for inp in document.querySelectorAll('#sidebar input.vis[data-mixto="1"]'):
+                inp.indeterminate = True
+            if E["buscar"].strip():
+                filtrar_lateral()
+        vis = ui.visibles(data)  # sin los equipos ocultos desde la lista de Equipos
         for b in document.querySelectorAll("#tabs button"):
             activo = attr(b, "tab") == t
             b.classList.toggle("activo", activo)
@@ -183,25 +203,30 @@ def render(empujar=True):
                 b.removeAttribute("aria-current")
         sin = '<div class="info">No hay equipos. Crea uno con «+ Nuevo equipo».</div>'
         if E["editando"] is not None:
-            html = ui.form_equipo(None if E["editando"] == "nuevo" else eq)
+            html = ui.form_equipo(None if E["editando"] == "nuevo" else eq, data, E["nuevo_fam"])
         elif t == "inicio":
-            html = ui.vista_inicio(data, res)
+            html = ui.vista_inicio(vis, res)
         elif t == "planta":
-            html = ui.panel(data, res, E["filtros"])
+            html = ui.panel(vis, res, E["filtros"])
         elif t == "equipos":
             b = base_demo(eq["id"]) if eq else None
-            html = ui.pagina_equipo(data, res, eq, E["cml"], E["sub"], base=(b or {}).get("diseno"), cambio=E["cambio"]) if eq else sin
+            html = ui.pagina_equipo(data, res, eq, E["cml"], E["sub"], base=(b or {}).get("diseno"), cambio=E["cambio"],
+                                    nuevo_cml=E["nuevo_cml"]) if eq else sin
         elif t == "plan":
-            html = ui.vista_plan(data, res)
+            html = ui.vista_plan(vis, res)
         elif t == "rbi":
             er = eq_rbi()
             b = base_demo(er["id"]) if er else None
-            html = ui.vista_rbi(data, res, er["id"] if er else None, base=(b or {}).get("rbi"), cambio=E["cambio"])
+            html = ui.vista_rbi(vis, res, er["id"] if er else None, base=(b or {}).get("rbi"), cambio=E["cambio"])
         elif t == "validacion":
-            html = ui.vista_validacion()
+            html = ui.vista_validacion(data, E["val_fam"])
         else:
             html = ui.vista_acerca()
         document.getElementById("contenido").innerHTML = ui.subindices(html)
+        if E["nuevo_cml"] and t == "equipos":
+            campo = document.querySelector('#form_cml input[name="componente"]')
+            if hay(campo):
+                campo.focus()
         ruta = ruta_desde_estado()
         if ruta != window.location.hash:
             if empujar and _ruta["actual"] is not None:
@@ -220,8 +245,15 @@ def render(empujar=True):
 
 
 def cambio():
-    guardar_local()
+    """Aplica un cambio: se ve al instante y queda pendiente hasta presionar «Guardar» (o Ctrl + S)."""
+    E["sucio"] = True
+    estado_guardado()
     render()
+
+
+def guardar_ahora():
+    if guardar_local(True):
+        render()
 
 
 def sincronizar_fecha():
@@ -347,6 +379,19 @@ def accion_click(el):
     act = attr(el, "act")
     eq = eq_actual()
 
+    if act in ("tab", "sel_eq", "subvista", "cerrar_modal"):
+        E["nuevo_cml"] = None
+    if act == "cerrar_modal":
+        render()
+        return
+    if act == "abrir_cml":
+        if time.monotonic() - _drag.pop("recien", 0) < 0.6:  # el clic que sigue a soltar el ícono ya abrió la ventana
+            return
+        eq_a = eq_actual()
+        if eq_a:
+            E["nuevo_cml"] = ui.sugerencia_cml(eq_a)
+            render()
+        return
     if act == "tab":
         E["tab"], E["editando"] = attr(el, "tab"), None
         if E["tab"] == "equipos":
@@ -399,6 +444,17 @@ def accion_click(el):
         E["rbi_eq"], E["tab"] = attr(el, "id"), "rbi"
         render()
         return
+    if act == "val_fam":
+        E["val_fam"] = attr(el, "fam") or ""
+        render()
+        return
+    if act == "exportar_validacion":
+        df = pd.DataFrame([{"Grupo": c["fam"], "Cálculo": c["nom"], "Entradas": c["ent"], "Referencia": c["ref"], "Esperado": c["esp"],
+                            "Programa": c["prog"], "Unidad": c["u"], "Diferencia [%]": round(c["dif"], 5),
+                            "Resultado": "OK" if c["ok"] else "Revisar"} for c in ui.resultados_validacion()])
+        descargar("\ufeff" + df.to_csv(index=False, sep=";", decimal=","), "validacion_calculos.csv", "text/csv")
+        toast(f"Validación exportada ({len(df)} casos).")
+        return
     if act == "imprimir":
         imprimir()
         return
@@ -406,13 +462,16 @@ def accion_click(el):
         exportar_plan()
         return
     if act == "guardar":
-        guardar_local(True)
+        if E["sucio"]:
+            guardar_ahora()
+        else:
+            toast("No hay cambios pendientes: todo está guardado.")
         return
     if act == "exportar":
         asyncio.ensure_future(exportar())
         return
     if act == "exportar_csv":
-        filas = ui.filas_panel(E["data"], ui.evaluar_todo(E["data"]), E["filtros"])
+        filas = ui.filas_panel(ui.visibles(E["data"]), ui.evaluar_todo(E["data"]), E["filtros"])
         if not filas:
             toast("No hay filas para exportar con los filtros actuales.")
             return
@@ -424,6 +483,27 @@ def accion_click(el):
     if act == "restablecer":
         if window.confirm("¿Restablecer el caso demostrativo? Se perderán los cambios no exportados."):
             asyncio.ensure_future(restablecer())
+        return
+    if act == "plegar":
+        clave = attr(el, "clave")
+        E["plegados"] ^= {clave}
+        render()
+        return
+    if act == "plegar_todo":
+        if E["plegados"]:
+            E["plegados"] = set()
+        else:
+            E["plegados"] = {f'a|{e["ubicacion"]["planta"]}|{e["ubicacion"]["area"]}' for e in E["data"]["equipos"]}
+        render()
+        return
+    if act == "mostrar_todos":
+        E["data"]["ocultos"] = []
+        toast("Todos los equipos vuelven a mostrarse.")
+        cambio()
+        return
+    if act == "nuevo_fam":
+        E["nuevo_fam"] = attr(el, "familia")
+        render()
         return
     if act == "nuevo_eq":
         E["editando"], E["tab"] = "nuevo", "equipos"
@@ -529,7 +609,7 @@ def imprimir():
 
 
 def exportar_plan():
-    plan = ui.filas_plan(E["data"], ui.evaluar_todo(E["data"]))
+    plan = ui.filas_plan(ui.visibles(E["data"]), ui.evaluar_todo(E["data"]))
     if not plan:
         toast("No hay CML en el plan.")
         return
@@ -600,7 +680,7 @@ def agregar_cml(eq):
             return False
         c["diseno_local"] = {"virola": int(vir), "H_m": h}
     eq["cmls"].append(c)
-    E["cml"] = cid
+    E["cml"], E["nuevo_cml"] = cid, None
     toast(f"CML {cid} agregado. Registra su primera medición.")
     return True
 
@@ -622,6 +702,14 @@ def guardar_equipo(nuevo):
     if not proyecto.fecha_valida(d.get("fecha_servicio")):
         toast("Ingresa la fecha de puesta en servicio.", error=True)
         return False
+    diseno = {}
+    for campo in ui.CAMPOS_FORM[fam]:
+        if d.get(f"d_{campo}") not in (None, ""):
+            v, msg = proyecto.validar_campo_diseno(campo, d.get(f"d_{campo}"))
+            if msg:
+                toast(msg, error=True)
+                return False
+            diseno[campo] = v
     if nuevo:
         if any(e["id"] == tag for e in E["data"]["equipos"]):
             toast("Ya existe un equipo con ese TAG.", error=True)
@@ -631,6 +719,7 @@ def guardar_equipo(nuevo):
         E["data"]["equipos"].append(eq)
     else:
         eq = eq_actual()
+    eq["diseno"].update(diseno)
     clase = proyecto.numero(d.get("clase"))
     eq.update(tag=tag, descripcion=proyecto.texto(d.get("descripcion"), 200), servicio=proyecto.texto(d.get("servicio")),
               fluido=proyecto.texto(d.get("fluido")), circuito=proyecto.texto(d.get("circuito"), 60),
@@ -656,6 +745,14 @@ def accion_change(el):
         E["filtros"][campo] = el.value or None
         render()
         return
+    if act == "preset_nps" and el.value:
+        od, t = el.value.split("|")
+        document.querySelector('#form_eq input[name="d_D_ext_mm"]').value = od
+        document.querySelector('#form_eq input[name="t_nom_mm"]').value = t
+        return
+    if act == "preset_g" and el.value:
+        document.querySelector('#form_eq input[name="d_G"]').value = el.value
+        return
     if act == "form_familia":
         mat = document.querySelector('#form_eq select[name="material"]')
         mat.innerHTML = ui.opciones_material(el.value)
@@ -675,6 +772,13 @@ def accion_change(el):
             toast(msg, error=True)
             render()
             return
+    elif act == "visible":
+        ids = set(json.loads(attr(el, "ids") or "[]"))
+        oc = set(E["data"].get("ocultos") or [])
+        oc = (oc - ids) if el.checked else (oc | ids)
+        E["data"]["ocultos"] = sorted(oc & {e["id"] for e in E["data"]["equipos"]})
+        n = len(E["data"]["ocultos"])
+        toast(f"{n} equipo(s) oculto(s) en la app." if n else "Todos los equipos visibles.")
     elif act == "sel_rbi":
         E["rbi_eq"] = el.value
         render()
@@ -703,7 +807,7 @@ def accion_change(el):
 
 def eq_rbi():
     """Recipiente que se evalúa en Riesgo (RBI): el elegido; si no, el primero con evaluación; si no, el primer recipiente."""
-    recs = ui.recipientes(E["data"])
+    recs = ui.recipientes(ui.visibles(E["data"]))
     return (next((e for e in recs if e["id"] == E["rbi_eq"]), None) or next((e for e in recs if e.get("rbi")), None)
             or (recs[0] if recs else None))
 
@@ -722,7 +826,8 @@ async def cargar_archivo(el, act):
             data = proyecto.validar_proyecto(json.loads(datos.decode("utf-8-sig")))
             E["data"], E["cml"], E["editando"], E["filtros"], E["rbi_eq"] = data, None, None, {}, None
             E["eq"] = data["equipos"][0]["id"] if data["equipos"] else None
-            toast(f"Proyecto importado: {archivo.name} ({len(data['equipos'])} equipos).")
+            guardar_local()
+            toast(f"Proyecto importado y guardado: {archivo.name} ({len(data['equipos'])} equipos).")
         else:
             permitidos = ("image/png", "image/jpeg") if act == "subir_img" else ("application/pdf",)
             mime = archivo.type
@@ -764,7 +869,8 @@ async def exportar():
 async def restablecer():
     await cargar_demo()
     E["tab"], E["filtros"], E["editando"], E["rbi_eq"] = "inicio", {}, None, None
-    cambio()
+    guardar_local()
+    render()
     toast("Caso demostrativo restablecido.")
 
 
@@ -814,9 +920,15 @@ def on_change(evt):
 def filtrar_lateral():
     """Muestra solo los equipos cuyo TAG o descripción contiene el texto buscado (y oculta ramas vacías)."""
     q = E["buscar"].strip().lower()
+    if not q:
+        render()  # restaura el árbol con sus ramas plegadas
+        return
+    for el in document.querySelectorAll("#sidebar .arbol ul, #sidebar .eq-lista"):
+        el.hidden = False  # al buscar se despliegan todas las ramas
     visibles = 0
     for el in document.querySelectorAll("#sidebar .eq-item"):
-        ok = not q or q in (attr(el, "buscar") or "")
+        ok = q in (attr(el, "buscar") or "")
+        el.parentElement.hidden = not ok
         el.hidden = not ok
         visibles += ok
     for li in document.querySelectorAll("#sidebar .arbol li"):
@@ -824,6 +936,90 @@ def filtrar_lateral():
     aviso = document.querySelector("#sidebar .sin-res")
     if hay(aviso):
         aviso.hidden = visibles > 0
+
+
+# ------------------------------------------------------------------ arrastrar el ícono de CML al esquema
+_drag = {}
+
+
+def _pos_esquema(evt):
+    """(x %, y %) del puntero sobre la imagen del esquema, o None si está fuera."""
+    img = document.querySelector("#contenido .esquema img")
+    if not hay(img):
+        return None
+    r = img.getBoundingClientRect()
+    if r.width == 0 or not (r.left <= evt.clientX <= r.right and r.top <= evt.clientY <= r.bottom):
+        return None
+    return (evt.clientX - r.left) / r.width * 100, (evt.clientY - r.top) / r.height * 100
+
+
+def _mover(evt):
+    g = _drag.get("fantasma")
+    if not g:
+        return
+    g.style.left, g.style.top = f"{evt.clientX}px", f"{evt.clientY}px"
+    _drag["dist"] = max(_drag.get("dist", 0), abs(evt.clientX - _drag["x0"]) + abs(evt.clientY - _drag["y0"]))
+    luz = document.querySelector("#contenido .zona-luz")
+    esq = document.querySelector("#contenido .esquema")
+    pos = _pos_esquema(evt)
+    if hay(esq):
+        esq.classList.toggle("sobre", pos is not None)
+    if not hay(luz):
+        return
+    z = ui.zona_en(eq_actual(), *pos) if pos else None
+    if z:
+        x0, y0, x1, y1 = z["r"]
+        luz.style.left, luz.style.top = f"{x0}%", f"{y0}%"
+        luz.style.width, luz.style.height = f"{x1 - x0}%", f"{y1 - y0}%"
+        luz.querySelector("span").innerText = z["nom"]
+        luz.hidden = False
+    else:
+        luz.hidden = True
+
+
+def _soltar(evt):
+    for tipo in ("pointermove", "pointerup", "pointercancel"):
+        p = _drag.get(tipo)
+        if p:
+            document.removeEventListener(tipo, p)
+    g = _drag.pop("fantasma", None)
+    if g:
+        g.remove()
+    pos = _pos_esquema(evt) if evt.type == "pointerup" else None
+    movio = _drag.get("dist", 0) > 6
+    eq = eq_actual()
+    if eq and (pos or not movio) and evt.type == "pointerup":
+        E["nuevo_cml"] = ui.sugerencia_cml(eq, *pos) if pos else ui.sugerencia_cml(eq)
+        _drag["recien"] = time.monotonic()
+        render()
+    else:
+        luz = document.querySelector("#contenido .zona-luz")
+        if hay(luz):
+            luz.hidden = True
+        esq = document.querySelector("#contenido .esquema")
+        if hay(esq):
+            esq.classList.remove("sobre")
+        if movio:
+            toast("Suelta el ícono sobre el esquema para ubicar el CML.")
+
+
+def on_pointerdown(evt):
+    t = evt.target.closest('[data-arrastre="cml"]')
+    if not hay(t) or evt.button != 0:
+        return
+    evt.preventDefault()
+    g = document.createElement("div")
+    g.className = "cml-fantasma"
+    g.innerText = "CML"
+    g.style.left, g.style.top = f"{evt.clientX}px", f"{evt.clientY}px"
+    document.body.appendChild(g)
+    _drag.clear()
+    _drag.update(fantasma=g, x0=evt.clientX, y0=evt.clientY, dist=0)
+    for tipo, fn in (("pointermove", _mover), ("pointerup", _soltar), ("pointercancel", _soltar)):
+        p = create_proxy(fn)
+        _proxies.append(p)
+        _drag[tipo] = p
+        document.addEventListener(tipo, p)
 
 
 def on_input(evt):
@@ -837,12 +1033,28 @@ def on_submit(evt):
 
 
 def on_keydown(evt):
+    if (evt.ctrlKey or evt.metaKey) and str(evt.key).lower() == "s":
+        evt.preventDefault()
+        if E["sucio"]:
+            guardar_ahora()
+        else:
+            toast("No hay cambios pendientes: todo está guardado.")
+        return
     if evt.key == "Escape":
         cerrar_menus()
+        if E["nuevo_cml"]:
+            E["nuevo_cml"] = None
+            render()
         return
     if evt.key in ("Enter", " ") and evt.target.getAttribute("role") == "button":
         evt.preventDefault()
         _seguro(accion_click, evt.target)
+
+
+def on_beforeunload(evt):
+    if E["sucio"]:  # el navegador pide confirmar antes de salir con cambios sin guardar
+        evt.preventDefault()
+        evt.returnValue = ""
 
 
 def registrar(tipo, fn):
@@ -869,16 +1081,21 @@ async def iniciar():
             await leer_demo()
         except Exception:  # noqa: BLE001 — sin demo de referencia solo se pierde la marca de campos editados
             E["demo"] = None
-    for tipo, fn in (("click", on_click), ("change", on_change), ("submit", on_submit), ("keydown", on_keydown), ("input", on_input)):
+    for tipo, fn in (("click", on_click), ("change", on_change), ("submit", on_submit), ("keydown", on_keydown), ("input", on_input),
+                     ("pointerdown", on_pointerdown)):
         registrar(tipo, fn)
     p = create_proxy(on_popstate)
     _proxies.append(p)
     window.addEventListener("popstate", p)
+    p = create_proxy(on_beforeunload)
+    _proxies.append(p)
+    window.addEventListener("beforeunload", p)
     estado_desde_ruta(window.location.hash)
     document.getElementById("cargando").hidden = True
     document.getElementById("app").hidden = False
     render()
     document.getElementById("estado-guardado").innerText = "Recuperado del navegador" if recuperado else "Caso demo"
+    estado_guardado()
     if guardado and not recuperado:
         toast("Los datos guardados estaban dañados: se cargó el caso demostrativo.", 6000, True)
 

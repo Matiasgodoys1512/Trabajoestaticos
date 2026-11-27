@@ -2,6 +2,7 @@
 import base64
 import html
 import io
+import json
 import re
 from datetime import date
 
@@ -253,15 +254,47 @@ def evaluar_todo(data, hoy=None):
 
 
 # ------------------------------------------------------------------ barra lateral
-def sidebar(data, res, sel_id, filtros=None, buscar=""):
-    """Estructura de planta (Planta › Área › Sistema › Equipo) con buscador por TAG o descripción."""
+def visibles(data):
+    """Vista del proyecto sin los equipos ocultos desde la lista de Equipos (se usa en Inicio, Planta, Plan y Riesgo)."""
+    ocultos = set(data.get("ocultos") or [])
+    eqs = [e for e in data["equipos"] if e["id"] not in ocultos]
+    return {**data, "equipos": eqs, "_n_ocultos": len(data["equipos"]) - len(eqs)}
+
+
+def _casilla(ids, ocultos, etiqueta):
+    """Casilla de visibilidad de una rama: marcada si todos sus equipos se ven; intermedia si solo algunos."""
+    n_vis = sum(1 for i in ids if i not in ocultos)
+    estado = "checked" if n_vis == len(ids) else ""
+    mixto = "1" if 0 < n_vis < len(ids) else "0"
+    return (f'<input type="checkbox" class="vis" data-act="visible" data-ids="{esc(json.dumps(ids))}" data-mixto="{mixto}" {estado} '
+            f'aria-label="Mostrar {esc(etiqueta)}" title="Mostrar u ocultar en toda la app">')
+
+
+def _nodo(clave, clase, nombre, ids, ocultos, plegados):
+    plegado = clave in plegados
+    return (f'<div class="nodo {clase}"><button class="plegar" data-act="plegar" data-clave="{esc(clave)}" '
+            f'aria-expanded="{"false" if plegado else "true"}" aria-label="{"Desplegar" if plegado else "Plegar"} {esc(nombre)}">'
+            f'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" '
+            f'stroke-linecap="round" stroke-linejoin="round"/></svg></button>{_casilla(ids, ocultos, nombre)}'
+            f'<span class="nodo-nom">{esc(nombre)}</span><span class="nodo-n">{len(ids)}</span></div>')
+
+
+def sidebar(data, res, sel_id, filtros=None, buscar="", plegados=()):
+    """Árbol Planta › Área › Sistema › Equipo: plegable, con casillas para ocultar equipos y buscador."""
+    ocultos = set(data.get("ocultos") or [])
+    plegados = set(plegados)
     n = len(data["equipos"])
-    h = [f'<div class="lateral-cab"><span>Equipos <small>{n}</small></span>'
+    n_vis = sum(1 for e in data["equipos"] if e["id"] not in ocultos)
+    h = [f'<div class="lateral-cab"><span>Equipos <small>{n_vis if ocultos else n}{f" de {n}" if ocultos else ""}</small></span>'
          '<button data-act="nuevo_eq" class="secundario chico" title="Registrar un equipo nuevo">+ Nuevo</button></div>',
          '<label class="buscar-eq"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
          'stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>'
          f'<input type="search" data-act="buscar_eq" value="{esc(buscar)}" placeholder="Buscar TAG o descripción" '
          'aria-label="Buscar equipo por TAG o descripción" autocomplete="off"></label>',
+         '<div class="lateral-acc">'
+         + (f'<span class="muted">{n - n_vis} oculto(s)</span><button class="enlace" data-act="mostrar_todos">Mostrar todos</button>'
+            if ocultos else '<span class="muted">Desmarca para ocultar en toda la app</span>')
+         + '<button class="enlace" data-act="plegar_todo">' + ("Desplegar todo" if plegados else "Plegar todo") + '</button></div>',
          '<p class="sin-res muted" hidden>Ningún equipo coincide con la búsqueda.</p>']
     arbol = {}
     for e in data["equipos"]:
@@ -269,23 +302,32 @@ def sidebar(data, res, sel_id, filtros=None, buscar=""):
         arbol.setdefault(u["planta"], {}).setdefault(u["area"], {}).setdefault(u["sistema"], []).append(e)
     h.append('<ul class="arbol">')
     for planta, areas_ in arbol.items():
-        h.append(f'<li><div class="nodo nodo-planta">{esc(planta)}</div><ul>')
+        kp = f"p|{planta}"
+        ids_p = [e["id"] for ar in areas_.values() for si in ar.values() for e in si]
+        h.append(f'<li>{_nodo(kp, "nodo-planta", planta, ids_p, ocultos, plegados)}<ul {"hidden" if kp in plegados else ""}>')
         for area, sistemas in areas_.items():
-            h.append(f'<li><div class="nodo nodo-area">{esc(area)}</div><ul>')
+            ka = f"a|{planta}|{area}"
+            ids_a = [e["id"] for si in sistemas.values() for e in si]
+            h.append(f'<li>{_nodo(ka, "nodo-area", area, ids_a, ocultos, plegados)}<ul {"hidden" if ka in plegados else ""}>')
             for sist, eqs in sistemas.items():
-                h.append(f'<li><div class="nodo nodo-sistema">{esc(sist)}</div>')
+                ks = f"s|{planta}|{area}|{sist}"
+                h.append(f'<li>{_nodo(ks, "nodo-sistema", sist, [e["id"] for e in eqs], ocultos, plegados)}'
+                         f'<div class="eq-lista" {"hidden" if ks in plegados else ""}>')
                 for e in eqs:
                     cond = res[e["id"]]["cond"]
                     act = "activo" if e["id"] == sel_id else ""
+                    oc = " oculto" if e["id"] in ocultos else ""
                     desc = e.get("descripcion") or FAMILIAS[e["familia"]]
                     clave = f'{e["tag"]} {desc} {FAMILIAS[e["familia"]]}'.lower()
-                    h.append(f'<div class="eq-item {act}" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(e["id"])}" '
+                    h.append(f'<div class="eq-fila{oc}">{_casilla([e["id"]], ocultos, e["tag"])}'
+                             f'<div class="eq-item {act}" role="button" tabindex="0" data-act="sel_eq" data-id="{esc(e["id"])}" '
                              f'data-buscar="{esc(clave)}" style="--c:{COLOR[cond]};--f:{COLOR_FAMILIA[e["familia"]][0]}" '
-                             f'title="{esc(e["tag"])} · {esc(desc)} · {CONDICION[cond]}" aria-label="{esc(e["tag"])}, {CONDICION[cond]}">'
+                             f'title="{esc(e["tag"])} · {esc(desc)} · {CONDICION[cond]}{" · oculto en la app" if oc else ""}" '
+                             f'aria-label="{esc(e["tag"])}, {CONDICION[cond]}">'
                              f'<span class="eq-ico">{ICONO_FAMILIA[e["familia"]]}</span>'
                              f'<span class="eq-txt"><span class="eq-tag">{esc(e["tag"])}</span><small>{esc(desc)}</small></span>'
-                             f'<span class="punto" style="background:{COLOR[cond]}"></span></div>')
-                h.append('</li>')
+                             f'<span class="punto" style="background:{COLOR[cond]}"></span></div></div>')
+                h.append('</div></li>')
             h.append('</ul></li>')
         h.append('</ul></li>')
     h.append('</ul>')
@@ -463,8 +505,13 @@ def panel(data, res, filtros):
     nombres = {"area": lambda v: v, "familia": lambda v: FAMILIAS.get(v, v), "cond": lambda v: CONDICION.get(v, v)}
     chips = "".join(f'<button class="filtro-chip" data-act="quitar_filtro" data-campo="{k}" title="Quitar este filtro">'
                     f'{esc(nombres[k](v))}<span aria-hidden="true">✕</span></button>' for k, v in filtros.items() if v and k in nombres)
-    activos_txt = ('<div class="filtros-activos" role="status"><span class="muted">Mostrando solo:</span>' + chips
-                   + '<button class="enlace" data-act="limpiar_filtros">Quitar filtros</button></div>') if activos else ""
+    n_oc = data.get("_n_ocultos", 0)
+    oc_txt = (f'<span class="filtro-chip oculto-chip">{n_oc} equipo(s) oculto(s) en la lista de Equipos</span>'
+              '<button class="enlace" data-act="mostrar_todos">Mostrar todos</button>') if n_oc else ""
+    activos_txt = ('<div class="filtros-activos" role="status">'
+                   + ('<span class="muted">Mostrando solo:</span>' + chips
+                      + '<button class="enlace" data-act="limpiar_filtros">Quitar filtros</button>' if activos else "")
+                   + oc_txt + '</div>') if (activos or n_oc) else ""
     h = ['<div class="cabecera"><h1>Estado de la planta</h1>'
          '<span class="desc">Plano por áreas y puntos de monitoreo, del más grave al menos grave</span></div>',
          activos_txt,
@@ -805,6 +852,129 @@ def grafico(eq, c, x):
             '- - - proyección con la CR adoptada</div>')
 
 
+# ------------------------------------------------------------------ zonas del esquema y nuevo CML
+# Zonas en % del esquema (geometría de tools/generar_esquemas.py): nombre, componente sugerido, rectángulo y virola.
+ZONAS = {
+    "data/img/tuberia_L101.png": [
+        {"nom": "Tramo descarga bomba", "comp": "Tramo recto descarga bomba", "r": (12, 63, 29, 77)},
+        {"nom": "Tramo vertical (subida)", "comp": "Tramo recto vertical", "r": (24, 36, 36, 70)},
+        {"nom": "Tramo horizontal superior", "comp": "Tramo recto horizontal superior", "r": (30, 28, 75, 42)},
+        {"nom": "Tramo vertical (bajada)", "comp": "Tramo recto vertical bajada", "r": (69, 36, 81, 60)},
+        {"nom": "Tramo llegada al separador", "comp": "Tramo recto llegada a separador", "r": (75, 53, 89, 67)}],
+    "data/img/recipiente_V201.png": [
+        {"nom": "Virola 1 (superior)", "comp": "Envolvente - virola 1", "r": (38, 12, 62, 34.5), "virola": 1},
+        {"nom": "Virola 2", "comp": "Envolvente - virola 2", "r": (38, 34.5, 62, 55.5), "virola": 2},
+        {"nom": "Virola 3 (inferior)", "comp": "Envolvente - virola 3", "r": (38, 55.5, 62, 78), "virola": 3}],
+    "data/img/tanque_TK301.png": [
+        {"nom": f"Virola {i}", "comp": f"Manto - virola {i}", "r": (20, 82 - 12 * i, 80, 94 - 12 * i), "virola": i} for i in range(1, 6)],
+}
+COMPONENTES_TIPO = {"tuberia": ["Tramo recto", "Tramo recto horizontal", "Tramo recto vertical", "Tramo recto descarga bomba"],
+                    "recipiente": [f"Envolvente - virola {i}" for i in range(1, 5)],
+                    "tanque": [f"Manto - virola {i}" for i in range(1, 9)]}
+
+
+def zonas_equipo(eq):
+    """Zonas del esquema del equipo; si es un esquema propio (subido), una grilla de 3 × 3."""
+    if eq.get("imagen") in ZONAS:
+        return ZONAS[eq["imagen"]]
+    out = []
+    for j, fila in enumerate(("superior", "media", "inferior")):
+        for i, col in enumerate(("izquierda", "centro", "derecha")):
+            out.append({"nom": f"Zona {fila} {col}", "comp": "", "r": (i * 100 / 3, j * 100 / 3, (i + 1) * 100 / 3, (j + 1) * 100 / 3)})
+    return out
+
+
+def zona_en(eq, x, y):
+    for z in zonas_equipo(eq):
+        x0, y0, x1, y1 = z["r"]
+        if x0 <= x <= x1 and y0 <= y <= y1:
+            return z
+    return None
+
+
+def siguiente_id_cml(eq):
+    nums = [m.groups() for m in (re.match(r"^(.*?)(\d+)$", c["id"]) for c in eq["cmls"]) if m]
+    if nums:
+        pref, ult = nums[-1]
+        n = max(int(b) for a, b in nums if a == pref) + 1
+        nid = f"{pref}{str(n).zfill(len(ult))}"
+    else:
+        dig = re.sub(r"\D", "", eq["tag"])[-3:] or "001"
+        nid = f"CML-{dig}-01"
+    ids = {c["id"] for c in eq["cmls"]}
+    while nid in ids:
+        nid += "b"
+    return nid
+
+
+def sugerencia_cml(eq, x=None, y=None):
+    """Valores sugeridos para un CML nuevo según la zona del esquema donde se soltó el ícono."""
+    z = zona_en(eq, x, y) if x is not None else None
+    notas = []
+    sug = {"id": siguiente_id_cml(eq), "componente": (z or {}).get("comp", ""), "x": round(x, 1) if x is not None else 50.0,
+           "y": round(y, 1) if y is not None else 50.0, "zona": (z or {}).get("nom", ""), "t_nom": eq["t_nom_mm"],
+           "virola": None, "H": None, "notas": notas}
+    sug["ubicacion"] = f'{z["nom"]} · x {sug["x"]:.0f} %, y {sug["y"]:.0f} % del esquema' if z else ""
+    notas.append(f'ID siguiente a los CML existentes ({len(eq["cmls"])}).')
+    if z:
+        notas.append(f'Zona «{z["nom"]}» → componente y ubicación sugeridos.')
+    if eq["familia"] == "tanque":
+        vir = (z or {}).get("virola") or 1
+        sug["virola"] = vir
+        mismos = [c for c in eq["cmls"] if (c.get("diseno_local") or {}).get("virola") == vir]
+        H1 = eq["diseno"].get("H_m", 10.0)
+        if mismos:
+            sug["H"] = mismos[0]["diseno_local"]["H_m"]
+            sug["t_nom"] = mismos[0].get("t_nom_mm") or eq["t_nom_mm"]
+            notas.append(f'Virola {vir}: H y espesor nominal copiados de {mismos[0]["id"]}.')
+        else:
+            pares = sorted({(c["diseno_local"]["virola"], c["diseno_local"]["H_m"]) for c in eq["cmls"] if c.get("diseno_local")})
+            alto = (pares[0][1] - pares[1][1]) / (pares[1][0] - pares[0][0]) if len(pares) > 1 and pares[1][0] != pares[0][0] else 2.4
+            sug["H"] = round(max(H1 - (vir - 1) * alto, 0.3), 2)
+            tns = [c.get("t_nom_mm") for c in eq["cmls"] if c.get("t_nom_mm")]
+            sug["t_nom"] = min(tns) if tns and vir > 1 else eq["t_nom_mm"]
+            notas.append(f'Virola {vir}: H = {f(H1, 1)} − ({vir} − 1) × {f(alto, 2)} m (altura de virola) = {f(sug["H"], 2)} m.')
+    else:
+        mismos = [c for c in eq["cmls"] if z and c["componente"] == z["comp"]]
+        if mismos:
+            sug["t_nom"] = mismos[0].get("t_nom_mm") or eq["t_nom_mm"]
+            notas.append(f'Espesor nominal igual al de {mismos[0]["id"]} (mismo componente).')
+        else:
+            notas.append("Espesor nominal = el del equipo.")
+    return sug
+
+
+def modal_cml(eq, sug):
+    """Ventana para registrar el CML nuevo, con los campos sugeridos (todos editables)."""
+    comps = sorted({c["componente"] for c in eq["cmls"] if c["componente"]} | {z["comp"] for z in zonas_equipo(eq) if z["comp"]}
+                   | set(COMPONENTES_TIPO[eq["familia"]]))
+    lista = "".join(f'<option value="{esc(c)}">' for c in comps)
+    tanque = ""
+    if eq["familia"] == "tanque":
+        tanque = (f'<label>Virola N°<input type="number" name="virola" value="{sug["virola"] or 1}" min="1" max="20"></label>'
+                  f'<label>H desde el fondo de la virola [m]<input type="number" step="0.01" name="H_m" value="{vin(sug["H"])}"></label>')
+    zona = (f'<span class="modal-zona">Zona: <b>{esc(sug["zona"])}</b></span>' if sug["zona"]
+            else '<span class="modal-zona">Sin zona: ajusta la posición x, y si lo necesitas</span>')
+    notas = "".join(f"<li>{esc(n)}</li>" for n in sug["notas"])
+    return ('<div class="modal-capa"><div class="modal-fondo" data-act="cerrar_modal"></div>'
+            f'<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-tit">'
+            f'<div class="modal-cab"><div><span class="eyebrow">{esc(eq["tag"])} · {FAMILIAS[eq["familia"]]}</span>'
+            f'<h2 id="modal-tit">Nuevo punto de monitoreo</h2>{zona}</div>'
+            '<button class="modal-x" data-act="cerrar_modal" aria-label="Cerrar">✕</button></div>'
+            '<form class="f" id="form_cml">'
+            f'<label>ID CML<input name="id" value="{esc(sug["id"])}" required maxlength="40"></label>'
+            f'<label>Componente<input name="componente" value="{esc(sug["componente"])}" list="lista-comp" placeholder="Elige o escribe"></label>'
+            f'<label class="ancho">Ubicación<input name="ubicacion" value="{esc(sug["ubicacion"])}" placeholder="p. ej. 0,3 m sobre soldadura, 90°"></label>'
+            f'<label>t nominal [mm]<input type="number" step="0.01" name="t_nom_mm" value="{vin(sug["t_nom"])}"></label>'
+            f'{tanque}'
+            f'<label>x [%]<input type="number" step="any" name="x" value="{vin(sug["x"])}" min="0" max="100"></label>'
+            f'<label>y [%]<input type="number" step="any" name="y" value="{vin(sug["y"])}" min="0" max="100"></label>'
+            f'<datalist id="lista-comp">{lista}</datalist>'
+            f'<div class="modal-notas ancho"><b>Sugerencias aplicadas</b><ul>{notas}</ul></div>'
+            '<div class="acciones-form ancho"><button data-act="add_cml">Agregar CML</button>'
+            '<button type="button" class="secundario" data-act="cerrar_modal">Cancelar</button></div></form></div></div>')
+
+
 # ------------------------------------------------------------------ equipo
 def ficha(eq):
     u = eq["ubicacion"]
@@ -821,7 +991,8 @@ def ficha(eq):
 def esquema(eq, res_eq, cml_sel):
     if not eq.get("imagen"):
         return '<div class="info">Sin esquema. Súbelo en “Documentación técnica” (PNG o JPG).</div>'
-    h = [f'<div class="esquema"><img src="{esc(eq["imagen"])}" alt="Esquema {esc(eq["tag"])}">']
+    h = [f'<div class="esquema"><img src="{esc(eq["imagen"])}" alt="Esquema {esc(eq["tag"])}" draggable="false">'
+         '<div class="zona-luz" hidden><span></span></div>']
     for c in eq["cmls"]:
         cond = res_eq["cmls"].get(c["id"], {}).get("condicion", "insuficiente")
         sel = "sel" if c["id"] == cml_sel else ""
@@ -832,7 +1003,7 @@ def esquema(eq, res_eq, cml_sel):
     return "".join(h)
 
 
-def vista_equipo(data, res, eq, cml_sel, cabecera=True):
+def vista_equipo(data, res, eq, cml_sel, cabecera=True, nuevo_cml=None):
     r = res[eq["id"]]
     h = [f'<div class="cabecera"><h1>{esc(eq["tag"])}</h1><span class="desc">{esc(eq["descripcion"])}</span>{badge(r["cond"])}'
          '<div class="der"><button class="chico secundario" data-act="editar_eq">Editar</button>'
@@ -848,21 +1019,19 @@ def vista_equipo(data, res, eq, cml_sel, cabecera=True):
                      f'aria-label="{esc(c["id"])}, {CONDICION[cond]}">'
                      f'<span class="punto" style="background:{COLOR[cond]}"></span>{esc(c["id"])}'
                      f'<small>{f(x["corrosion"]["t_actual"]) if x else "—"} mm</small></div>')
-    nuevo = ('<form class="f" id="form_cml">'
-             '<label>ID CML<input name="id" placeholder="CML-xxx-05" required></label>'
-             '<label>Componente<input name="componente"></label><label>Ubicación<input name="ubicacion"></label>'
-             '<label>x [%]<input type="number" name="x" min="0" max="100" value="50"></label>'
-             '<label>y [%]<input type="number" name="y" min="0" max="100" value="50"></label>'
-             '<label>t nominal [mm]<input type="number" step="0.01" name="t_nom_mm"></label>')
-    if eq["familia"] == "tanque":
-        nuevo += ('<label>Virola N°<input type="number" name="virola" value="1" min="1"></label>'
-                  '<label>H desde fondo virola [m]<input type="number" step="0.01" name="H_m"></label>')
-    nuevo += '<button data-act="add_cml">Agregar CML</button></form>'
-    h.append(f'<div class="grid-eq"><div class="card">{esquema(eq, r, cml_sel)}'
+    token = ('<div class="cml-arrastre no-imprimir"><div class="cml-token" data-arrastre="cml" data-act="abrir_cml" role="button" tabindex="0" '
+             'aria-label="Agregar CML: arrastra este ícono al esquema o presiona Enter">'
+             '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.2"/>'
+             '<circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>CML</div>'
+             '<span class="muted">' + ("Arrastra el ícono sobre el esquema para ubicar un CML nuevo" if eq.get("imagen")
+                                       else "Sube un esquema para ubicar CML arrastrando; o haz clic en el ícono") + '</span></div>')
+    h.append(f'<div class="grid-eq"><div class="card">{token}{esquema(eq, r, cml_sel)}'
              '<div class="muted" style="margin-top:8px">Marcadores: CML en (x, y) % del ancho y alto del esquema, '
              'origen arriba a la izquierda. Color = condición.</div></div>'
              f'<div class="card"><h2>Ficha técnica</h2>{ficha(eq)}<h3>CML / TML</h3><div class="chips">{"".join(chips)}</div>'
-             f'{plegable("+ Agregar CML", nuevo)}</div></div>')
+             '<button class="secundario chico no-imprimir" data-act="abrir_cml" style="margin-top:12px">＋ Agregar CML</button></div></div>')
+    if nuevo_cml:
+        h.append(modal_cml(eq, nuevo_cml))
 
     if not r["error"] and eq["cmls"]:
         filas = "".join(
@@ -890,7 +1059,7 @@ def vista_equipo(data, res, eq, cml_sel, cabecera=True):
     return "".join(h)
 
 
-def pagina_equipo(data, res, eq, cml_sel, sub="resumen", base=None, cambio=""):
+def pagina_equipo(data, res, eq, cml_sel, sub="resumen", base=None, cambio="", nuevo_cml=None):
     """Página de un equipo: migas de pan (ubicación técnica), encabezado y subnavegación Resumen | Diseño."""
     r = res[eq["id"]]
     u = eq["ubicacion"]
@@ -912,7 +1081,7 @@ def pagina_equipo(data, res, eq, cml_sel, sub="resumen", base=None, cambio=""):
            f'{esc(u["planta"])} › {esc(u["area"])} › {esc(u["sistema"])}</div>'
            f'<div class="segmentado" role="tablist" aria-label="Vista del equipo">{pestanas}</div>')
     cuerpo = (vista_diseno(eq, r, cabecera=False, base=base, cambio=cambio) if sub == "diseno"
-              else vista_equipo(data, res, eq, cml_sel, cabecera=False))
+              else vista_equipo(data, res, eq, cml_sel, cabecera=False, nuevo_cml=nuevo_cml))
     return cab + cuerpo
 
 
@@ -1047,7 +1216,6 @@ def vista_inicio(data, res):
     leyenda = "".join(f'<span><i style="background:{COLOR[k]}"></i>{CONDICION[k]}</span>'
                       for k in ("normal", "alerta", "vencida", "bajo_minimo", "insuficiente"))
     h = ['<section class="hero-panel">',
-         '<span class="pildora-hero">Prototipo académico · MAN040-B · ASME / API</span>',
          '<div class="hero"><h1>Integridad de equipos estáticos,<br><span class="degradado">en un solo lugar.</span></h1>'
          '<p class="lead">Registra mediciones de espesor, calcula corrosión y vida remanente, programa la próxima inspección '
          'según API 510, 570 y 653, y prioriza por riesgo con API RP 581.</p>'
@@ -1126,38 +1294,127 @@ def vista_inicio(data, res):
     return "".join(h)
 
 
-def form_equipo(eq=None):
+# Tubería de acero al carbono, ASME B36.10M: NPS → (diámetro exterior mm, {cédula: espesor nominal mm})
+NPS = {"1/2": (21.3, {"40": 2.77, "80": 3.73}), "3/4": (26.7, {"40": 2.87, "80": 3.91}), "1": (33.4, {"40": 3.38, "80": 4.55}),
+       "1 1/2": (48.3, {"40": 3.68, "80": 5.08}), "2": (60.3, {"40": 3.91, "80": 5.54}), "3": (88.9, {"40": 5.49, "80": 7.62}),
+       "4": (114.3, {"40": 6.02, "80": 8.56}), "6": (168.3, {"40": 7.11, "80": 10.97}), "8": (219.1, {"40": 8.18, "80": 12.70}),
+       "10": (273.0, {"40": 9.27, "80": 15.09}), "12": (323.8, {"40": 10.31, "80": 17.48})}
+CODIGOS_FAM = {"tuberia": ("ASME B31.3-2018", "API 570 4ª ed. (2016)"), "recipiente": ("ASME BPVC VIII-1 2019", "API 510 10ª ed. (2014)"),
+               "tanque": ("API 650 12ª ed. (2013)", "API 653 5ª ed. (2014)")}
+CLASES_570 = {1: "Clase 1 · fluidos que vaporizan y pueden formar nube inflamable/tóxica (p. ej. HF, GLP)",
+              2: "Clase 2 · la mayoría de los servicios de proceso (hidrocarburos, H2, gas combustible)",
+              3: "Clase 3 · inflamables que no vaporizan significativamente (diésel, gasóleos)",
+              4: "Clase 4 · no inflamables y no tóxicos (agua, aire, vapor de baja presión)"}
+E_JUNTA = {"1": "1,00 · radiografía total (UW-12, tipo 1)", "0.85": "0,85 · radiografía por puntos (spot)", "0.7": "0,70 · sin radiografía"}
+FLUIDOS_G = {"Agua": 1.0, "Diésel": 0.85, "Gasolina": 0.74, "Crudo": 0.87, "Ácido sulfúrico 93 %": 1.83, "Soda cáustica 50 %": 1.52}
+DESC_TIPO = {"tuberia": ["Línea de descarga de bomba", "Línea de succión", "Línea de proceso", "Cabezal de distribución"],
+             "recipiente": ["Separador vertical", "Separador horizontal", "Acumulador", "Desaireador", "Pulmón de aire"],
+             "tanque": ["Tanque de almacenamiento, techo cónico", "Tanque de almacenamiento, techo flotante", "Estanque de agua"]}
+FLUIDOS = ["Hidrocarburo", "Diésel", "Gasolina", "Crudo", "Agua de proceso", "Agua de alimentación de calderas", "Vapor", "HF / hidrocarburo",
+           "Ácido sulfúrico 93 %", "Soda cáustica 50 %", "Gas natural", "Aire comprimido"]
+PREFIJO_TAG = {"recipiente": "V-", "tanque": "TK-", "tuberia": ""}
+CAMPOS_FORM = {"tuberia": ["P_diseno_MPa", "T_diseno_C", "D_ext_mm", "E", "CA_mm"],
+               "recipiente": ["P_diseno_MPa", "T_diseno_C", "D_int_mm", "E", "CA_mm"],
+               "tanque": ["D_m", "H_m", "G", "CA_mm"]}
+
+
+def tag_sugerido(data, fam):
+    pref = PREFIJO_TAG[fam]
+    if not pref:
+        return ""
+    nums = [int(m.group(1)) for e in data["equipos"] if (m := re.match(rf"^{re.escape(pref)}(\d+)$", e["tag"]))]
+    return f"{pref}{(max(nums) + 1) if nums else 101}"
+
+
+def _lista(id_, valores):
+    return f'<datalist id="{id_}">' + "".join(f'<option value="{esc(v)}">' for v in sorted(set(valores)) if v) + '</datalist>'
+
+
+def form_equipo(eq=None, data=None, fam=None):
+    """Alta o edición de un equipo: se elige la familia y el formulario propone valores típicos (todos editables)."""
+    data = data or {"equipos": []}
     nuevo = eq is None
-    eq = eq or {"id": "", "tag": "", "familia": "tuberia", "descripcion": "", "servicio": "", "fluido": "",
-                "ubicacion": {"planta": "Refinería Demo", "area": "", "sistema": ""}, "circuito": "", "clase": 2,
-                "material": "A106-B", "codigo_diseno": "", "codigo_servicio": "", "t_nom_mm": 0,
-                "fecha_servicio": date.today().isoformat(), "operacion": {"P_MPa": 0, "T_C": 20}}
-    fam_opts = "".join(f'<option value="{k}" {"selected" if k == eq["familia"] else ""}>{v}</option>' for k, v in FAMILIAS.items())
-    u = eq["ubicacion"]
+    fam = (fam if fam in FAMILIAS else "tuberia") if nuevo else eq["familia"]
+    cod_d, cod_s = CODIGOS_FAM[fam]
+    plantas = [e["ubicacion"]["planta"] for e in data["equipos"]]
+    eq = eq or {"id": "", "tag": tag_sugerido(data, fam), "familia": fam, "descripcion": "", "servicio": "", "fluido": "",
+                "ubicacion": {"planta": plantas[0] if plantas else "Planta", "area": "", "sistema": ""}, "circuito": "",
+                "clase": 2, "material": next(k for k, m in MATERIALES.items() if m["familia"] == fam),
+                "codigo_diseno": cod_d, "codigo_servicio": cod_s, "t_nom_mm": "", "fecha_servicio": date.today().isoformat(),
+                "operacion": {"P_MPa": 0, "T_C": 20}, "diseno": dict(DISENO_BASE[fam])}
+    u, d = eq["ubicacion"], eq.get("diseno") or DISENO_BASE[fam]
 
-    def inp(name, label, val, tipo="text", extra=""):
-        return f'<label>{label}<input type="{tipo}" name="{name}" value="{esc(val)}" {extra}></label>'
+    def inp(name, label, val, tipo="text", extra="", clase=""):
+        return f'<label class="{clase}">{label}<input type="{tipo}" name="{name}" value="{esc(val)}" {extra}></label>'
 
-    return (f'<div class="card"><h2>{"Nuevo equipo" if nuevo else "Editar " + esc(eq["tag"])}</h2>'
+    def num_d(campo, label, extra=""):
+        return inp(f"d_{campo}", label, vin(d.get(campo, "")), "number", f'step="any" {extra}')
+
+    selector = ""
+    if nuevo:
+        selector = '<div class="fam-elegir" role="radiogroup" aria-label="Familia del equipo">' + "".join(
+            f'<button type="button" role="radio" aria-checked="{"true" if k == fam else "false"}" class="{"sel" if k == fam else ""}" '
+            f'data-act="nuevo_fam" data-familia="{k}" style="--f1:{COLOR_FAMILIA[k][0]};--f2:{COLOR_FAMILIA[k][1]}">'
+            f'<span class="fe-ico">{ICONO_FAMILIA[k]}</span><span><b>{v}</b><small>{CODIGOS[k]}</small></span></button>'
+            for k, v in FAMILIAS.items()) + '</div>'
+    especificos = ""
+    if fam == "tuberia":
+        opciones = "".join(f'<option value="{od}|{t}">NPS {n} · Sch {sch} · OD {f(od, 1)} mm · t {f(t, 2)} mm</option>'
+                           for n, (od, schs) in NPS.items() for sch, t in schs.items())
+        especificos = (f'<label class="ancho">Diámetro y cédula (ASME B36.10M)<select data-act="preset_nps">'
+                       f'<option value="">— Elegir para completar diámetro y espesor —</option>{opciones}</select></label>'
+                       + inp("circuito", "Circuito de inspección", eq.get("circuito") or "", extra='placeholder="p. ej. CI-HF-02"')
+                       + '<label>Clase API 570<select name="clase">' + "".join(
+                           f'<option value="{k}" {"selected" if k == (eq.get("clase") or 2) else ""}>{esc(v)}</option>'
+                           for k, v in CLASES_570.items()) + '</select></label>'
+                       + num_d("D_ext_mm", "Diámetro exterior D [mm]") + num_d("E", "Factor de calidad E", 'min="0" max="1"'))
+    elif fam == "recipiente":
+        especificos = (num_d("D_int_mm", "Diámetro interior [mm]")
+                       + '<label>Eficiencia de junta E (UW-12)<select name="d_E">' + "".join(
+                           f'<option value="{k}" {"selected" if abs(float(k) - float(d.get("E", 0.85))) < 1e-9 else ""}>{v}</option>'
+                           for k, v in E_JUNTA.items()) + '</select></label>')
+    else:
+        especificos = (num_d("D_m", "Diámetro nominal D [m]") + num_d("H_m", "Nivel de diseño H [m]")
+                       + '<label>Fluido almacenado → G<select data-act="preset_g"><option value="">— Elegir para completar G —</option>'
+                       + "".join(f'<option value="{g}">{esc(n)} · G = {f(g, 2)}</option>' for n, g in FLUIDOS_G.items())
+                       + '</select></label>' + num_d("G", "Gravedad específica G"))
+    t_lista = {"tuberia": [], "recipiente": [6, 8, 10, 12, 14, 16, 19, 22, 25, 32], "tanque": [5, 6, 8, 10, 12, 14, 16, 19]}[fam]
+    presion = (num_d("P_diseno_MPa", "Presión de diseño P [MPa]") + num_d("T_diseno_C", "Temperatura de diseño [°C]")) if fam != "tanque" else ""
+    return (f'<div class="card form-eq"><h2>{"Nuevo equipo" if nuevo else "Editar " + esc(eq["tag"])}</h2>{selector}'
             '<form class="f" id="form_eq">'
-            + inp("tag", "TAG", eq["tag"], extra='required maxlength="60"')
-            + f'<label>Familia<select name="familia" data-act="form_familia" {"" if nuevo else "disabled"}>{fam_opts}</select></label>'
-            + inp("descripcion", "Descripción", eq["descripcion"]) + inp("servicio", "Servicio", eq["servicio"])
-            + inp("fluido", "Fluido", eq["fluido"]) + inp("planta", "Planta", u["planta"])
-            + inp("area", "Área", u["area"]) + inp("sistema", "Sistema / línea", u["sistema"])
-            + inp("circuito", "Circuito de inspección (tubería)", eq.get("circuito") or "")
-            + inp("clase", "Clase API 570 (1–4)", eq.get("clase") or "", "number", 'min="1" max="4"')
-            + f'<label>Material<select name="material">{opciones_material(eq["familia"], eq["material"])}</select></label>'
-            + inp("codigo_diseno", "Código de diseño", eq["codigo_diseno"])
-            + inp("codigo_servicio", "Código en servicio", eq["codigo_servicio"])
-            + inp("t_nom_mm", "Espesor nominal [mm]", eq["t_nom_mm"] or "", "number", 'step="0.01" min="0.1" required')
+            f'<input type="hidden" name="familia" value="{fam}">'
+            '<h3 class="ancho">Identificación y ubicación</h3>'
+            + inp("tag", "TAG", eq["tag"], extra=f'required maxlength="60" placeholder="{ {"tuberia": "p. ej. 6&quot;-AG-205", "recipiente": "p. ej. V-202", "tanque": "p. ej. TK-302"}[fam] }"')
+            + inp("descripcion", "Descripción", eq["descripcion"], extra='list="l-desc" placeholder="Elige o escribe"')
+            + inp("servicio", "Servicio", eq["servicio"], extra='list="l-serv"')
+            + inp("fluido", "Fluido", eq["fluido"], extra='list="l-fluido"')
+            + inp("planta", "Planta", u["planta"], extra='list="l-planta"')
+            + inp("area", "Área", u["area"], extra='list="l-area" placeholder="p. ej. Área 400 - Servicios"')
+            + inp("sistema", "Sistema / línea", u["sistema"], extra='list="l-sist"')
             + inp("fecha_servicio", "Puesta en servicio", eq.get("fecha_servicio", ""), "date")
+            + '<h3 class="ancho">Material, códigos y espesor</h3>'
+            + f'<label>Material<select name="material">{opciones_material(fam, eq["material"])}</select></label>'
+            + inp("codigo_diseno", "Código de diseño", eq["codigo_diseno"], extra='list="l-cod-d"')
+            + inp("codigo_servicio", "Código en servicio", eq["codigo_servicio"], extra='list="l-cod-s"')
+            + inp("t_nom_mm", "Espesor nominal [mm]", eq["t_nom_mm"] or "", "number",
+                  'step="0.01" min="0.1" required' + (' list="l-t"' if t_lista else ""))
+            + '<h3 class="ancho">Diseño y operación</h3>' + especificos + presion
+            + num_d("CA_mm", "Sobreespesor de corrosión CA [mm]", 'list="l-ca"')
             + inp("P_op", "P operación [MPa]", eq["operacion"]["P_MPa"], "number", 'step="0.01"')
             + inp("T_op", "T operación [°C]", eq["operacion"]["T_C"], "number", 'step="1"')
+            + _lista("l-desc", DESC_TIPO[fam] + [e["descripcion"] for e in data["equipos"] if e["familia"] == fam])
+            + _lista("l-serv", [e["servicio"] for e in data["equipos"]])
+            + _lista("l-fluido", FLUIDOS + [e["fluido"] for e in data["equipos"]])
+            + _lista("l-planta", plantas) + _lista("l-area", [e["ubicacion"]["area"] for e in data["equipos"]])
+            + _lista("l-sist", [e["ubicacion"]["sistema"] for e in data["equipos"]])
+            + _lista("l-cod-d", [cod_d] + [e["codigo_diseno"] for e in data["equipos"] if e["familia"] == fam])
+            + _lista("l-cod-s", [cod_s] + [e["codigo_servicio"] for e in data["equipos"] if e["familia"] == fam])
+            + _lista("l-t", [vin(t) for t in t_lista]) + _lista("l-ca", ["0", "1.5", "3", "4.5", "6"])
             + '<div class="acciones-form ancho">'
             f'<button data-act="guardar_eq" data-nuevo="{1 if nuevo else 0}">Guardar equipo</button>'
             '<button type="button" class="secundario" data-act="cancelar_eq">Cancelar</button></div></form>'
-            '<p class="muted">Los datos de diseño (P, T, dimensiones, E, CA) se editan después en la pestaña «Diseño».</p></div>')
+            '<p class="muted">Los valores propuestos son típicos y editables. Después podrás ajustar el resto del diseño en «Diseño y espesores» '
+            'y ubicar los CML arrastrando el ícono sobre el esquema.</p></div>')
 
 
 # ------------------------------------------------------------------ diseño
@@ -1300,7 +1557,8 @@ def calcular_rbi(eq, res_eq):
     x = res_eq["cmls"][c["id"]]
     v = x["corrosion"]
     mat = MATERIALES[eq["material"]]
-    S = esfuerzo_admisible(eq["material"], eq["diseno"]["T_diseno_C"])
+    # Tanques: esfuerzo de diseño Sd de API 650 (Tabla 5.2a); tubería y recipiente: S a la temperatura de diseño
+    S = mat["Sd"] if eq["familia"] == "tanque" else esfuerzo_admisible(eq["material"], eq["diseno"]["T_diseno_C"])
     f_eval = hoy_eval().isoformat()  # fecha de evaluación global del proyecto
     edad = co.anios(eq["fecha_servicio"], f_eval)
     cr = v["cr_lp"] if v["cr_lp"] and v["cr_lp"] > 0 else (v["cr"] or 0.0)
@@ -1309,9 +1567,10 @@ def calcular_rbi(eq, res_eq):
     con = rbi.df_adelgazamiento(**ent, inspecciones=cfg["inspecciones"])
     sin = rbi.df_adelgazamiento(**ent, inspecciones={})
     fms = rbi.f_ms(cfg.get("pscore", 50))
-    rr = rbi.riesgo(con["Df"], cfg["C_A_m2"], cfg["C_E"], cfg.get("moneda", "USD"), fms=fms)
-    rs = rbi.riesgo(sin["Df"], cfg["C_A_m2"], cfg["C_E"], cfg.get("moneda", "USD"), fms=fms)
-    return {"ent": ent, "con": con, "sin": sin, "fms": fms, "r": rr, "r_sin": rs, "f_eval": f_eval, "cml": c,
+    gff = rbi.GFF[eq["familia"]]
+    rr = rbi.riesgo(con["Df"], cfg["C_A_m2"], cfg["C_E"], cfg.get("moneda", "USD"), gff=gff, fms=fms)
+    rs = rbi.riesgo(sin["Df"], cfg["C_A_m2"], cfg["C_E"], cfg.get("moneda", "USD"), gff=gff, fms=fms)
+    return {"ent": ent, "con": con, "sin": sin, "fms": fms, "r": rr, "r_sin": rs, "f_eval": f_eval, "cml": c, "gff": gff,
             "cr_adoptada": v["cr"]}
 
 
@@ -1323,7 +1582,8 @@ COLOR_NIVEL = {"Bajo": "#0ca30c", "Medio": "#fab219", "Medio-alto": "#ec835a", "
 
 
 def recipientes(data):
-    return [e for e in data["equipos"] if e["familia"] == "recipiente"]
+    """Equipos que se pueden evaluar en Riesgo (RBI): las tres familias (API 581 Parte 2 §4, adelgazamiento)."""
+    return [e for e in data["equipos"] if e["familia"] in FAMILIAS]
 
 
 def riesgos_planta(data, res):
@@ -1362,14 +1622,17 @@ def matriz_planta(puntos, sel_id, rango=None):
 def vista_rbi(data, res, eq_id=None, base=None, cambio=""):
     recs = recipientes(data)
     if not recs:
-        return '<div class="info">No hay recipientes a presión. El RBI implementado cubre adelgazamiento generalizado de recipientes.</div>'
+        return '<div class="info">No hay equipos visibles para evaluar el riesgo.</div>'
     eq = next((e for e in recs if e["id"] == eq_id), None) or next((e for e in recs if e.get("rbi")), recs[0])
-    opts = "".join(f'<option value="{esc(e["id"])}" {"selected" if e is eq else ""}>{esc(e["tag"])}'
-                   f'{"" if e.get("rbi") else " (sin evaluar)"}</option>' for e in recs)
+    opts = "".join(
+        f'<optgroup label="{PLURAL[fam]}">' + "".join(
+            f'<option value="{esc(e["id"])}" {"selected" if e is eq else ""}>{esc(e["tag"])}{"" if e.get("rbi") else " (sin evaluar)"}</option>'
+            for e in recs if e["familia"] == fam) + '</optgroup>'
+        for fam in FAMILIAS if any(e["familia"] == fam for e in recs))
     selector = (f'<label class="sel-rbi">Equipo<select data-act="sel_rbi" aria-label="Equipo a evaluar">{opts}</select></label>'
                 if len(recs) > 1 else "")
-    cab = (f'<div class="cabecera"><h1>RBI · {esc(eq["tag"])}</h1><span class="desc">Adelgazamiento generalizado · API RP 580 / 581 · '
-           f'evaluado al {hoy_eval():%d-%m-%Y}</span><div class="der">{selector}</div></div>')
+    cab = (f'<div class="cabecera"><h1>RBI · {esc(eq["tag"])}</h1><span class="desc">{FAMILIAS[eq["familia"]]} · '
+           f'adelgazamiento generalizado · API RP 580 / 581 · evaluado al {hoy_eval():%d-%m-%Y}</span><div class="der">{selector}</div></div>')
     puntos = riesgos_planta(data, res)
     planta = ""
     if len(puntos) > 1:
@@ -1447,21 +1710,26 @@ def vista_rbi(data, res, eq_id=None, base=None, cambio=""):
         ("CR largo plazo (usada en D_f)", "API 581 §4.5.2 recomienda la CR de largo plazo", f(e["cr"], 4, "mm/año")),
         ("CR adoptada en vida remanente", "máx(CR_LP; CR_CP), criterio conservador del panel", f(R["cr_adoptada"], 4, "mm/año")),
         ("age", f"{fecha_cl(eq['fecha_servicio'])} → {fecha_cl(R['f_eval'])}", f(e["edad"], 2, "años")),
-        ("t_rdi", "espesor entregado", f(e["t_rdi"], 2, "mm")), ("t_min", "UG-27", f(e["t_min"], 3, "mm")),
+        ("t_rdi", "espesor entregado", f(e["t_rdi"], 2, "mm")),
+        ("t_min", {"tuberia": "B31.3 / API 574", "recipiente": "UG-27", "tanque": "API 653"}[eq["familia"]], f(e["t_min"], 3, "mm")),
+        ("S", "Sd, API 650 Tabla 5.2a" if eq["familia"] == "tanque" else "a T de diseño (B31.3 A-1 / II-D 1A)", f(e["S"], 1, "MPa")),
         ("Art = CR·age / t_rdi", "ec. 2.12", f(p["Art"], 4)), ("FS = (YS + TS)/2 · E · 1,1", "ec. 2.13", f(p["FS"], 1, "MPa")),
         ("SR_P = S·E·t_min / (FS·t_rdi)", "ec. 2.14", f(p["SRp"], 4)),
         ("Pr₁ / Pr₂ / Pr₃", f"Tabla 4.5 ({cfg['confianza']})", " / ".join(f(v, 2) for v in p["prior"])),
         ("Po₁ / Po₂ / Po₃", "ec. 2.16–2.17, Tabla 4.6", " / ".join(f(v, 4) for v in p["Po"])),
         ("β₁ / β₂ / β₃", "ec. 2.18 (DS 1, 2, 4)", " / ".join(f(v, 3) for v in p["beta"])),
         ("D_fB = ΣPo·Φ(−β) / 1,56·10⁻⁴", "ec. 2.19", f(p["DfB"], 2)), ("D_f = máx(D_fB / F_OM; 0,1)", "ec. 2.20", f(R["con"]["Df"], 2)),
-        ("P_f = gff · F_MS · D_f", f"gff 3,06·10⁻⁵ (Tabla 3.1) · F_MS {f(R['fms'], 3)} (ec. 2.10)", sci(r["Pf"]) + " 1/año"),
+        ("P_f = gff · F_MS · D_f", f"gff {sci(R['gff'])}, {rbi.COMPONENTE_581[eq['familia']]} · F_MS {f(R['fms'], 3)} (ec. 2.10)",
+         sci(r["Pf"]) + " 1/año"),
         ("R_A = P_f · C_A", "Parte 1 §4.1", f(r["R_A"], 5, "m²/año")), ("R_E = P_f · C_E", "Parte 1 §4.1", f(r["R_E"], 2, f"{r['moneda']}/año")),
     ]
     tabla = ('<table><tr><th>Paso</th><th>Origen</th><th class="num">Valor</th></tr>'
              + "".join(f'<tr><td>{a}</td><td class="muted">{b}</td><td class="num">{c}</td></tr>' for a, b, c in filas) + '</table>')
     h.append(plegable("Desarrollo del cálculo (API RP 581 Parte 2 §4.5.7)", tabla))
     h.append(plegable("Supuestos del modelo",
-                      '<ul><li>Modelo académico simplificado: un mecanismo, sin cladding, F_IP = F_DL = 1.</li>'
+                      '<ul><li>Modelo académico simplificado: un mecanismo (adelgazamiento generalizado), sin cladding, F_IP = F_DL = 1. '
+                      'Se aplica igual a tuberías, recipientes y manto de tanques (API 581 Parte 2 §4); el fondo del tanque no se evalúa.</li>'
+                      '<li>gff según el tipo de componente (Parte 2, Tabla 3.1): tubería y recipiente 3,06·10⁻⁵; virola de tanque 1,00·10⁻⁴ fallas/año.</li>'
                       '<li>Consecuencias ingresadas por el usuario; base temporal 1 año.</li>'
                       f'<li>Escenario: {esc(cfg.get("escenario", ""))}</li>'
                       f'<li>Base de valoración: {esc(cfg.get("base_valoracion", ""))}</li>'
@@ -1517,29 +1785,87 @@ def casos_validacion():
     ]
 
 
-def vista_validacion():
-    casos = casos_validacion()
-    filas, ok_n = [], 0
-    for fam, nom, ent, ref, esp, prog, u in casos:
-        dif = abs(prog - esp) / abs(esp) * 100 if esp else 0
-        ok = dif <= 0.5
-        ok_n += ok
-        filas.append(f'<tr><td><b>{esc(nom)}</b><div class="muted">{esc(fam)} · {esc(ref)}</div></td><td class="muted">{esc(ent)}</td>'
-                     f'<td class="num">{f(esp, 4)}</td><td class="num">{f(prog, 4)}</td><td>{u}</td><td class="num">{"&lt; 0,001" if dif < 0.001 else f(dif, 3)} %</td>'
-                     f'<td>{badge("normal", "OK") if ok else badge("bajo_minimo", "Revisar")}</td></tr>')
-    h = ['<div class="cabecera"><h1>Validación</h1><span class="desc">Comparación con cálculos independientes</span></div>',
-         '<div class="stats">', stat("Casos verificados", f"{ok_n}/{len(casos)}", "", "tolerancia 0,5 %", "destacado"),
-         stat("Familias", "3 + RBI"), stat("Caso de clase", "Ejercicio 05", "", "8\" A53 B · HF"), '</div>',
-         '<div class="card"><table><tr><th>Cálculo</th><th>Entradas</th><th class="num">Esperado</th><th class="num">Programa</th>'
-         '<th>Unidad</th><th class="num">Dif.</th><th></th></tr>' + "".join(filas) + '</table>'
-         '<div class="muted" style="margin-top:8px">Esperado: cálculo manual / planilla. Programa: mismas funciones de la app, ejecutadas en el navegador.</div></div>']
-    cond = [("normal", "CML-101-01 · 201-01/02 · 301-01/02", "t sobre t_alerta y fecha vigente"),
-            ("alerta", "CML-101-02", "t_min < t < t_min + CR·2 años"),
-            ("bajo_minimo", "CML-201-03", "9,50 mm < t_min 9,67 mm"),
-            ("vencida", "CML-101-04", "Ejercicio de clase: próxima inspección en 2024"),
-            ("insuficiente", "CML-101-03 · 301-03", "Spool reemplazado / CML nuevo con 1 lectura")]
-    h.append('<div class="card"><h2>Casos de condición en la demo</h2><table>'
-             + "".join(f'<tr><td>{badge(k)}</td><td>{esc(a)}</td><td class="muted">{esc(b)}</td></tr>' for k, a, b in cond) + '</table></div>')
+GRUPO_VAL = {"Tubería": "tuberia", "Recipiente": "recipiente", "Tanque": "tanque", "RBI": "rbi", "RBI demo": "rbi"}
+NOMBRE_VAL = {"tuberia": ("Tubería de proceso", "ASME B31.3 · API 570"), "recipiente": ("Recipiente a presión", "ASME VIII-1 · API 510"),
+              "tanque": ("Tanque atmosférico", "API 650 · API 653"), "rbi": ("Riesgo (RBI)", "API RP 581 Parte 2 §4")}
+ICONO_VAL = {**ICONO_FAMILIA, "rbi": '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 8h14v14H8zM26 8h14v14H26zM8 26h14v14H8zM26 26h14v14H26z" '
+             'fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/></svg>'}
+COLOR_VAL = {**{k: v[0] for k, v in COLOR_FAMILIA.items()}, "rbi": "#7a4fb5"}
+
+
+def resultados_validacion():
+    """Casos con su diferencia relativa y estado (tolerancia 0,5 %)."""
+    out = []
+    for fam, nom, ent, ref, esp, prog, u in casos_validacion():
+        u = "adim." if u == "—" else u
+        dif = abs(prog - esp) / abs(esp) * 100 if esp else 0.0
+        out.append({"grupo": GRUPO_VAL.get(fam, "rbi"), "fam": fam, "nom": nom, "ent": ent, "ref": ref, "esp": esp, "prog": prog,
+                    "u": u, "dif": dif, "ok": dif <= 0.5})
+    return out
+
+
+def _num_val(x, u):
+    if u in ("USD/año",):
+        return f(x, 2)
+    return f(x, 4) if abs(x) < 100 else f(x, 2)
+
+
+def vista_validacion(data=None, filtro=""):
+    casos = resultados_validacion()
+    ok_n = sum(c["ok"] for c in casos)
+    dif_max = max(c["dif"] for c in casos) if casos else 0
+    grupos = [g for g in NOMBRE_VAL if any(c["grupo"] == g for c in casos)]
+    filtro = filtro if filtro in grupos else ""
+    seg = "".join(f'<button data-act="val_fam" data-fam="{g}" class="{"activo" if filtro == g else ""}">{t}</button>'
+                  for g, t in [("", "Todas")] + [(g, NOMBRE_VAL[g][0].split(" (")[0].split(" de ")[0].split(" a ")[0]) for g in grupos])
+    h = ['<div class="cabecera"><h1>Validación</h1><span class="desc">Resultados del programa frente a cálculos independientes</span>'
+         '<div class="der"><button class="chico secundario" data-act="exportar_validacion">Exportar CSV</button></div></div>',
+         '<div class="kpis">',
+         kpi("cml", COLOR["normal"] if ok_n == len(casos) else COLOR["bajo_minimo"], "Casos verificados", f"{ok_n}/{len(casos)}", "tolerancia 0,5 %"),
+         kpi("equipos", "#0e6f8f", "Diferencia máxima", f"{dif_max:.3f} %".replace(".", ","), "entre esperado y programa"),
+         kpi("fecha", "#b5651d", "Familias cubiertas", f"{len(grupos) - 1} + RBI", "tubería, recipiente y tanque"),
+         kpi("accion", "#7a4fb5", "Caso de clase", "Ejercicio 05", '8" A53 B · 150 psig · 200 °F'),
+         '</div>',
+         f'<div class="segmentado val-seg" role="tablist" aria-label="Filtrar por familia">{seg}</div>']
+    for g in grupos:
+        if filtro and g != filtro:
+            continue
+        cs = [c for c in casos if c["grupo"] == g]
+        n_ok = sum(c["ok"] for c in cs)
+        filas = []
+        for c in cs:
+            clase = "exacto" if c["dif"] < 0.01 else ("ok" if c["ok"] else "mal")
+            dif_txt = "&lt; 0,01 %" if c["dif"] < 0.01 else f'{c["dif"]:.3f} %'.replace(".", ",")
+            filas.append(
+                f'<details class="val-caso {clase}"><summary>'
+                f'<span class="val-ico" aria-hidden="true">{"✓" if c["ok"] else "!"}</span>'
+                f'<span class="val-nom"><b>{esc(c["nom"])}</b><small>{esc(c["ref"])}</small></span>'
+                f'<span class="val-num"><small>Esperado</small>{_num_val(c["esp"], c["u"])} <i>{esc(c["u"])}</i></span>'
+                f'<span class="val-num"><small>Programa</small>{_num_val(c["prog"], c["u"])} <i>{esc(c["u"])}</i></span>'
+                f'<span class="val-dif">{dif_txt}</span></summary>'
+                f'<div class="val-det"><div><span class="eyebrow">Entradas</span><p>{esc(c["ent"])}</p></div>'
+                f'<div><span class="eyebrow">Fuente del valor esperado</span><p>Cálculo manual / independiente con las ecuaciones de {esc(c["ref"])}. '
+                f'El valor «Programa» se obtiene con las mismas funciones que usa la app.</p></div></div></details>')
+        nombre, codigos = NOMBRE_VAL[g]
+        h.append(f'<section class="card val-grupo" style="--g:{COLOR_VAL[g]}"><div class="val-cab"><span class="val-gico">{ICONO_VAL[g]}</span>'
+                 f'<div><span class="eyebrow">{codigos}</span><h2>{nombre}</h2></div>'
+                 f'<span class="val-pill {"todo-ok" if n_ok == len(cs) else ""}">{n_ok}/{len(cs)} OK</span></div>'
+                 f'<div class="val-lista">{"".join(filas)}</div></section>')
+
+    cond = [("normal", ["CML-101-01", "CML-201-01", "CML-201-02", "CML-301-01", "CML-301-02"], "t sobre t alerta y fecha vigente"),
+            ("alerta", ["CML-101-02"], "t mín < t < t mín + CR·2 años"),
+            ("bajo_minimo", ["CML-201-03"], "9,50 mm < t mín 9,67 mm"),
+            ("vencida", ["CML-101-04"], "Ejercicio de clase: próxima inspección en 2024"),
+            ("insuficiente", ["CML-101-03", "CML-301-03"], "Spool reemplazado / CML nuevo con 1 lectura")]
+    donde = {c["id"]: e["id"] for e in (data or {}).get("equipos", []) for c in e["cmls"]}
+    tarjetas = []
+    for k, ids, txt in cond:
+        chips = "".join(f'<button class="eq-chip" data-act="sel_eq" data-id="{esc(donde[i])}" data-cml="{esc(i)}">{esc(i)} ›</button>'
+                        if i in donde else f'<span class="eq-chip">{esc(i)}</span>' for i in ids)
+        tarjetas.append(f'<div class="cond-caso" style="--c:{COLOR[k]}">{badge(k)}<p>{esc(txt)}</p><div class="eq-chips">{chips}</div></div>')
+    h.append('<section class="card"><div class="card-cab"><h2>Casos de condición en la demo</h2>'
+             '<span class="muted">Cada estado tiene al menos un CML que lo demuestra · clic para abrirlo</span></div>'
+             f'<div class="cond-grid">{"".join(tarjetas)}</div></section>')
     return "".join(h)
 
 
@@ -1553,7 +1879,7 @@ def vista_acerca():
            '<li>CR adoptada = máx(LP; CP). RBI con CR de largo plazo (API 581 §4.5.2).</li>'
            '<li>Reemplazo, reparación o cambio de punto reinicia la serie comparable.</li>'
            '<li>Intervalos: próxima medición de espesores. Tanques: solo manto.</li>'
-           '<li>RBI: modelo académico, solo adelgazamiento generalizado en recipientes (V-201 en la demo).</li><li>Datos de la demo: ficticios.</li></ul>')
+           '<li>RBI: modelo académico de adelgazamiento generalizado para las tres familias (manto en tanques).</li><li>Datos de la demo: ficticios.</li></ul>')
     refs = ('<ul>'
             f'<li>{EDICION["B31.3"]}: §304.1.1, §304.1.2, Tablas A-1, A-1A, 302.3.5, 304.1.1.</li>'
             f'<li>{EDICION["VIII-1"]}: UG-16(c), UG-27 · {EDICION["II-D"]}: Tabla 1A.</li>'

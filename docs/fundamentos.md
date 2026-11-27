@@ -70,7 +70,7 @@ Validaciones: menos de 2 mediciones comparables → "información insuficiente";
 
 Fecha próxima = fecha de la última medición + intervalo. Estado **vencida** si hoy > fecha próxima.
 
-## RBI: API RP 581 Parte 2 §4 (adelgazamiento generalizado), aplicado al recipiente
+## RBI: API RP 581 Parte 2 §4 (adelgazamiento generalizado): tubería, recipiente y manto de tanque
 1. Art = Cr·age<sub>tk</sub> / t<sub>rdi</sub> (sin cladding, ec. 2.12).
 2. FS = (YS + TS)/2 · E · 1,1 (ec. 2.13).
 3. SR<sub>P</sub> = S·E·máx(t<sub>min</sub>, t<sub>c</sub>) / (FS·t<sub>rdi</sub>) (ec. 2.14).
@@ -79,7 +79,8 @@ Fecha próxima = fecha de la última medición + intervalo. Estado **vencida** s
 6. I<sub>i</sub> = Pr<sub>i</sub> · Π Co<sub>i</sub>^N; Po<sub>i</sub> = I<sub>i</sub> / ΣI (ec. 2.16–2.17, Bayes).
 7. β<sub>i</sub> = (1 − DS<sub>i</sub>·Art − SR<sub>P</sub>) / √(DS<sub>i</sub>²·Art²·COV<sub>Δt</sub>² + (1 − DS<sub>i</sub>·Art)²·COV<sub>Sf</sub>² + SR<sub>P</sub>²·COV<sub>P</sub>²), con DS = 1, 2, 4; COV<sub>Δt</sub> = 0,20; COV<sub>Sf</sub> = 0,20; COV<sub>P</sub> = 0,05 (ec. 2.18).
 8. D<sub>fB</sub> = Σ Po<sub>i</sub>·Φ(−β<sub>i</sub>) / 1,56·10⁻⁴ (ec. 2.19); D<sub>f</sub> = máx(D<sub>fB</sub>·F<sub>IP</sub>·F<sub>DL</sub> / F<sub>OM</sub>; 0,1) (ec. 2.20).
-9. P<sub>f</sub>(t) = gff · F<sub>MS</sub> · D<sub>f</sub>, con gff = 3,06·10⁻⁵ fallas/año (Tabla 3.1) y F<sub>MS</sub> = 10^(−0,02·pscore + 1) (ec. 2.10).
+9. P<sub>f</sub>(t) = gff · F<sub>MS</sub> · D<sub>f</sub>, con gff total de la Parte 2, Tabla 3.1: PIPE y Vessel = 3,06·10⁻⁵; Tank650 COURSE-1-10 = 1,00·10⁻⁴ fallas/año; F<sub>MS</sub> = 10^(−0,02·pscore + 1) (ec. 2.10).
+   S en SR<sub>P</sub>: tubería y recipiente a la T de diseño (B31.3 Tabla A-1 / II-D Tabla 1A); tanque, S<sub>d</sub> de API 650 Tabla 5.2a. El fondo del tanque (TANKBOTTOM, gff 7,2·10⁻⁴) no se evalúa.
 10. R<sub>A</sub> = P<sub>f</sub> · C<sub>A</sub> [m²/año]; R<sub>E</sub> = P<sub>f</sub> · C<sub>E</sub> [USD/año]. Categorías: Parte 1, Tablas 4.1M y 4.2.
 
 **Una inspección no recupera espesor**: solo cambia los Po<sub>i</sub> (menor incertidumbre sobre la CR real) y, por lo tanto, el D<sub>f</sub>.

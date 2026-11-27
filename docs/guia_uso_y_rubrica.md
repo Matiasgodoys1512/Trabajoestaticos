@@ -22,8 +22,10 @@ App: https://matiasgodoys1512.github.io/Trabajoestaticos/ (primera carga 20–40
 
 **Otras ayudas.** Los íconos «?» explican cada indicador. En *Diseño* y *Riesgo (RBI)*, un recuadro «Último cambio» muestra el antes → después; los campos distintos del caso demo quedan en ámbar y «↺» los devuelve al valor original. En Planta, la tarjeta *Calidad de datos* reúne los avisos de todos los CML. En *Riesgo (RBI)* se puede elegir el recipiente y, con dos o más evaluados, aparece la matriz y el ranking de riesgo de la planta. En cada equipo, «Imprimir ficha» genera un informe para guardar en PDF.
 
-**Menú «Proyecto»** (arriba a la derecha). Los cambios se guardan solos en el navegador (el estado aparece al lado, p. ej. «Guardado 13:01»). El menú agrupa las acciones sobre el archivo, separadas de la navegación para evitar errores:
-- **Guardar ahora** · **Exportar proyecto** (JSON con equipos, CML, mediciones, esquemas y PDF) · **Importar proyecto** (se valida; si hay datos inválidos se rechaza e indica el motivo) · **Exportar resumen CSV** (para Excel).
+**Guardar** (arriba a la derecha). Los cambios se aplican al instante, pero se guardan en el navegador al presionar **«Guardar cambios»** (o Ctrl + S): el botón se pone verde cuando hay cambios pendientes y muestra «Guardado ✓» cuando no. Si se intenta cerrar la página con cambios sin guardar, el navegador pide confirmar. Importar y restablecer se guardan de inmediato.
+
+**Menú «Proyecto»** (arriba a la derecha). Agrupa las acciones sobre el archivo, separadas de la navegación para evitar errores:
+- **Exportar proyecto** (JSON con equipos, CML, mediciones, esquemas y PDF) · **Importar proyecto** (se valida; si hay datos inválidos se rechaza e indica el motivo) · **Exportar resumen CSV** (para Excel).
 - **Restablecer caso demo**, en rojo y al final, porque descarta los cambios no exportados (pide confirmación).
 
 **Estados de un CML** (orden de gravedad):

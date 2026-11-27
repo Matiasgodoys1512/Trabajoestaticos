@@ -1091,7 +1091,10 @@ async def iniciar():
     _proxies.append(p)
     window.addEventListener("beforeunload", p)
     estado_desde_ruta(window.location.hash)
-    document.getElementById("cargando").hidden = True
+    if hasattr(window, "cargaLista"):  # completa la pantalla de carga y la desvanece (ver index.html)
+        window.cargaLista()
+    else:
+        document.getElementById("cargando").hidden = True
     document.getElementById("app").hidden = False
     render()
     document.getElementById("estado-guardado").innerText = "Recuperado del navegador" if recuperado else "Caso demo"

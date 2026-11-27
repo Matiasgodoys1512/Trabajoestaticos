@@ -56,13 +56,60 @@
 
   <noscript><div class="error" style="margin:24px">Esta aplicación necesita JavaScript habilitado (ejecuta Python en el navegador con PyScript).</div></noscript>
 
-  <div id="cargando" class="cargando" role="status" aria-live="polite">
-    <span class="eyebrow">Prototipo académico · MAN040-B</span>
-    <h1>Integridad de equipos estáticos,<br>en un solo lugar.</h1>
-    <p class="lead">Mediciones de espesor, corrosión, vida remanente, próxima inspección y riesgo, según ASME y API.</p>
-    <div class="progreso"><div class="spinner" aria-hidden="true"></div><span>Preparando el motor de cálculo en Python…</span></div>
-    <p class="muted">La primera visita tarda 20–40 s porque el navegador descarga Python; las siguientes son inmediatas.</p>
-    <p id="carga-lenta" class="muted" hidden>Está tardando más de lo normal. Revisa la conexión y recarga la página (Ctrl + F5).</p>
+  <div id="cargando" class="carga" role="status" aria-live="polite">
+    <div class="carga-centro">
+      <div class="carga-marca"><span class="logo" aria-hidden="true">GI</span>
+        <span><strong>Gestión de Integridad</strong><small>Equipos estáticos · MAN040-B</small></span></div>
+
+      <div class="ut-escena" aria-hidden="true">
+        <div class="ut-caja">
+        <svg class="ut-placa" viewBox="0 0 360 190">
+          <defs>
+            <linearGradient id="ut-acero" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#e4e9e6"/><stop offset=".5" stop-color="#cfd7d2"/><stop offset="1" stop-color="#b9c3bd"/>
+            </linearGradient>
+            <pattern id="ut-trama" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <path d="M0 0V8" stroke="rgba(0,0,0,.06)" stroke-width="2"/>
+            </pattern>
+          </defs>
+          <text x="12" y="16" class="ut-rot">Plancha · SA-516 Gr. 70 · t nom 12,70 mm</text>
+          <!-- plancha con picaduras en la cara interna (coinciden con el perfil de espesores del script) -->
+          <path d="M10 70H350V140H274Q262 140 254 128Q240 112 224 112Q208 112 196 128Q188 140 176 140H130Q122 140 117 133Q112 125 104 125Q96 125 91 133Q86 140 78 140H10Z"
+                fill="url(#ut-acero)" stroke="#8a968f" stroke-width="1.5"/>
+          <path d="M10 70H350V140H274Q262 140 254 128Q240 112 224 112Q208 112 196 128Q188 140 176 140H130Q122 140 117 133Q112 125 104 125Q96 125 91 133Q86 140 78 140H10Z"
+                fill="url(#ut-trama)"/>
+          <path d="M10 117H350" stroke="#d03b3b" stroke-width="1.2" stroke-dasharray="5 4" opacity=".75"/>
+          <text x="350" y="160" text-anchor="end" class="ut-rot ut-rojo">- - t mín 8,5 mm</text>
+          <text x="12" y="182" class="ut-rot">Cara interna · corrosión</text>
+        </svg>
+          <div class="ut-carro" id="ut-carro"><div class="ut-sonda">
+            <svg class="ut-cable" viewBox="0 0 40 40"><path d="M6 40C6 24 26 22 34 0" fill="none" stroke="#6e6e73" stroke-width="2"/></svg>
+            <span class="ut-cuerpo"><i></i></span><span class="ut-zapata"></span>
+            <span class="ut-haz" id="ut-haz"><b></b></span>
+          </div></div>
+        </div>
+        <div class="ut-ascan">
+          <div class="ut-ascan-cab"><span>A-scan</span><span class="ut-vivo">en vivo</span></div>
+          <svg viewBox="0 0 220 110" preserveAspectRatio="none">
+            <g class="ut-grilla"><path d="M0 22H220M0 44H220M0 66H220M0 88H220M44 0V110M88 0V110M132 0V110M176 0V110"/></g>
+            <rect id="ut-compuerta" x="120" y="30" width="60" height="70" rx="3" class="ut-gate"/>
+            <path id="ut-onda" class="ut-onda" d="M0 100H220"/>
+          </svg>
+          <div class="ut-lectura">t = <b id="ut-t">12,70</b> mm</div>
+        </div>
+      </div>
+
+      <h1 class="carga-titulo">Preparando la inspección…</h1>
+      <ol class="carga-pasos" id="carga-pasos">
+        <li class="activo"><i></i><span>Motor Python en el navegador <small>Pyodide · WebAssembly</small></span></li>
+        <li><i></i><span>Librerías científicas <small id="carga-paquetes">NumPy · pandas · Matplotlib</small></span></li>
+        <li><i></i><span>Normas, materiales y cálculos <small>ASME B31.3 · VIII-1 · API 510 / 570 / 653 / 581</small></span></li>
+        <li><i></i><span>Abriendo el proyecto <small>equipos, CML y mediciones</small></span></li>
+      </ol>
+      <div class="carga-barra"><i id="carga-progreso"></i></div>
+      <p class="carga-nota">La primera visita tarda 20–40 s porque el navegador descarga Python; las siguientes son casi inmediatas.</p>
+      <p id="carga-lenta" class="carga-nota carga-alerta" hidden>Está tardando más de lo normal. Revisa la conexión y recarga la página (Ctrl + F5).</p>
+    </div>
   </div>
 
   <div class="layout" id="app" hidden>
@@ -74,8 +121,79 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script>
-    // Aviso si Pyodide no termina de cargar (sin red o CDN caído). Única línea de JS propia.
-    setTimeout(function () { if (document.getElementById("app").hidden) document.getElementById("carga-lenta").hidden = false; }, 90000);
+    // Pantalla de carga: corre ANTES de que exista Python (PyScript aún no carga), por eso es JavaScript.
+    // 1) Animación de una medición UT: palpador, haz y A-scan con el eco de fondo según el espesor bajo el palpador.
+    // 2) Pasos reales: escucha los mensajes de Pyodide («Loading…», «Loaded…») y el evento py:ready.
+    // 3) window.cargaLista() la llama app.py al terminar: completa la barra y desvanece la pantalla.
+    (function () {
+      var $ = function (id) { return document.getElementById(id); };
+      var reducido = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var pasos = $("carga-pasos").children, barra = $("carga-progreso"), etapa = 0, fin = false;
+      function avanzar(n, detalle) {
+        if (fin || n <= etapa) return;
+        etapa = n;
+        for (var i = 0; i < pasos.length; i++) pasos[i].className = i < n ? "listo" : (i === n ? "activo" : "");
+        barra.style.width = (12 + n * 22) + "%";
+        if (detalle) $("carga-paquetes").textContent = detalle;
+      }
+      barra.style.width = "8%";
+      ["log", "info"].forEach(function (k) {           // mensajes de Pyodide → pasos reales
+        var orig = console[k];
+        console[k] = function () {
+          try {
+            var m = String(arguments[0] || "");
+            if (/^Loading /.test(m)) {
+              avanzar(1);
+              var lista = m.replace(/^Loading /, "").split(", ");
+              if (etapa === 1 && lista.join() !== "micropip")
+                $("carga-paquetes").textContent = "Instalando: " + lista.slice(0, 5).join(" · ") + (lista.length > 5 ? " y " + (lista.length - 5) + " más" : "");
+            }
+            else if (/^Loaded .*(numpy|pandas|matplotlib)/i.test(m)) avanzar(2);
+          } catch (e) { /* nunca interrumpir el registro */ }
+          return orig.apply(console, arguments);
+        };
+      });
+      window.addEventListener("py:ready", function () { avanzar(3); }, true);
+      var lento = setTimeout(function () { if ($("app").hidden) $("carga-lenta").hidden = false; }, 90000);
+
+      // perfil de espesores (mm) a lo largo de la plancha: dos picaduras, coinciden con el dibujo (x = 0..1)
+      function espesor(p) {
+        return 12.7 - 5.08 * Math.exp(-Math.pow((p - 0.643) / 0.075, 2)) - 2.72 * Math.exp(-Math.pow((p - 0.253) / 0.04, 2));
+      }
+      // El palpador lo mueve CSS (sigue fluido aunque Python ocupe el hilo principal); aquí solo se lee su posición.
+      var caja = document.querySelector(".ut-caja"), sonda = document.querySelector(".ut-sonda");
+      var onda = $("ut-onda"), lect = $("ut-t"), haz = $("ut-haz"), gate = $("ut-compuerta"), raf;
+      function cuadro() {
+        var rc = caja.getBoundingClientRect(), rs = sonda.getBoundingClientRect();
+        var x = rc.width ? (rs.left + rs.width / 2 - rc.left) / rc.width * 360 : 223;   // en unidades del dibujo
+        var p = Math.min(Math.max((x - 26) / 308, 0), 1), t = espesor(p);
+        haz.style.height = (t / 12.7 * 70 / 190 * 100).toFixed(2) + "%";               // hasta la cara interna
+        // A-scan: pulso inicial + eco de fondo (posición ∝ espesor) + segundo eco, con ruido
+        var e1 = 20 + t * 11.5, e2 = 20 + t * 23, d = "M0 100";
+        for (var i = 1; i <= 220; i += 2) {
+          var a = 70 * Math.exp(-Math.pow((i - 12) / 3.2, 2)) + 62 * Math.exp(-Math.pow((i - e1) / 2.6, 2))
+                + 26 * Math.exp(-Math.pow((i - e2) / 3, 2)) + (reducido ? 0 : Math.random() * 3.2);
+          d += "L" + i + " " + (100 - a).toFixed(1);
+        }
+        onda.setAttribute("d", d);
+        gate.setAttribute("x", (e1 - 22).toFixed(1));
+        lect.textContent = t.toFixed(2).replace(".", ",");
+        lect.parentNode.className = "ut-lectura" + (t < 8.5 ? " critico" : t < 10.2 ? " alerta" : "");
+        if (!fin && !reducido) raf = requestAnimationFrame(cuadro);
+      }
+      raf = requestAnimationFrame(cuadro);
+
+      window.cargaLista = function () {
+        avanzar(4);
+        fin = true;
+        clearTimeout(lento);
+        for (var i = 0; i < pasos.length; i++) pasos[i].className = "listo";
+        barra.style.width = "100%";
+        var c = $("cargando");
+        c.classList.add("listo");
+        setTimeout(function () { cancelAnimationFrame(raf); c.hidden = true; }, 650);
+      };
+    })();
   </script>
   <script type="py" src="py/app.py" config="pyscript.toml"></script>
 </body>
